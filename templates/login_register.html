@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>FinSight | Login & Register</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='global.css') }}">
+</head>
+<body>
+  <div class="main-container">
+    <!-- LEFT QUOTE PANEL -->
+    <div class="left-panel">
+      <div class="quote-box">
+        <h2>Look First /<br>Then Leap.</h2>
+        <p>— Your Fintech Vision</p>
+      </div>
+    </div>
+
+    <!-- RIGHT AUTH PANEL -->
+    <div class="right-panel">
+      <div class="auth-box">
+        <div class="tabs">
+          <button id="loginTab" class="{{ 'active' if show == 'login' else '' }}">Login</button>
+          <button id="registerTab" class="{{ 'active' if show == 'register' else '' }}">Register</button>
+        </div>
+
+        <div class="auth-forms">
+          <!-- Login Form -->
+          <div class="form-container {% if show == 'login' %}active{% endif %}" id="loginForm">
+            <h2>Login</h2>
+            {% if error and show == 'login' %}
+              <p class="error">{{ error }}</p>
+            {% endif %}
+            <form method="POST" action="{{ url_for('login') }}">
+              <input type="hidden" name="action" value="login">
+              <div class="form-group">
+                <input type="email" name="email" placeholder="Email" required />
+              </div>
+              <div class="form-group">
+                <input type="password" name="password" placeholder="Password" required />
+              </div>
+              <a href="#" class="forgot">Forgot Password?</a>
+              <button type="submit">Login</button>
+              <p class="bottom-text">New to the FinSight? <a href="#" id="showRegister">Register</a></p>
+            </form>
+          </div>
+
+          <!-- Register Form -->
+          <div class="form-container {% if show == 'register' %}active{% endif %}" id="registerForm">
+            <h2>Register</h2>
+            {% if error and show == 'register' %}
+              <p class="error">{{ error }}</p>
+            {% elif success %}
+              <p class="success">{{ success }}</p>
+            {% endif %}
+            <form method="POST" action="{{ url_for('login') }}">
+              <input type="hidden" name="action" value="register">
+              <div class="form-group">
+                <input type="email" name="email" placeholder="Email" required />
+              </div>
+              <div class="form-group">
+                <input type="password" name="password" placeholder="Password" required />
+              </div>
+              <button type="submit">Register</button>
+              <p class="bottom-text">Already have an account? <a href="#" id="showLogin">Login</a></p>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+ <script>
+  const loginTab = document.getElementById("loginTab");
+  const registerTab = document.getElementById("registerTab");
+  const loginForm = document.getElementById("loginForm");
+  const registerForm = document.getElementById("registerForm");
+  const showRegister = document.getElementById("showRegister");
+  const showLogin = document.getElementById("showLogin");
+
+  function switchToLogin() {
+    loginForm.classList.add("active");
+    registerForm.classList.remove("active");
+    loginTab.classList.add("active");
+    registerTab.classList.remove("active");
+  }
+
+  function switchToRegister() {
+    registerForm.classList.add("active");
+    loginForm.classList.remove("active");
+    registerTab.classList.add("active");
+    loginTab.classList.remove("active");
+  }
+
+  loginTab.addEventListener("click", switchToLogin);
+  registerTab.addEventListener("click", switchToRegister);
+  showRegister.addEventListener("click", (e) => {
+    e.preventDefault();
+    switchToRegister();
+  });
+  showLogin.addEventListener("click", (e) => {
+    e.preventDefault();
+    switchToLogin();
+  });
+
+  // 🌟 Auto-open based on backend context
+  const defaultForm = "{{ show | default('login') }}";
+  if (defaultForm === "register") {
+    switchToRegister();
+  } else {
+    switchToLogin();
+  }
+</script>
+
+</body>
+</html>
