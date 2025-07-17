@@ -1,0 +1,246 @@
+/* login_register.css */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: 'Segoe UI', sans-serif;
+}
+
+body, html {
+  height: 100%;
+  background: #0D0D0D;
+  color: #E0E0E0;
+}
+
+.main-container {
+  display: flex;
+  height: 100vh;
+}
+
+/* LEFT PANEL */
+.left-panel {
+  flex: 1;
+  background: linear-gradient(to bottom right, #00D09C22, #00D09C05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.quote-box {
+  max-width: 300px;
+  text-align: center;
+  font-size: 1.5rem;
+  color: #00D09C;
+}
+
+.quote-box p {
+  margin-top: 10px;
+  font-size: 1rem;
+  color: #E0E0E0;
+}
+
+/* RIGHT PANEL */
+.right-panel {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+}
+
+.auth-box {
+  background: #1A1A1A;
+  padding: 2rem;
+  border-radius: 20px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 0 20px #00D09C20;
+  text-align: center;
+}
+
+.tabs {
+  display: flex;
+  justify-content: space-around;
+  margin-bottom: 20px;
+}
+
+.tabs button {
+  flex: 1;
+  padding: 10px;
+  background: none;
+  border: none;
+  color: #888;
+  font-size: 1rem;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+}
+
+.tabs button.active {
+  color: #00D09C;
+  border-color: #00D09C;
+}
+
+.form-container {
+  display: none;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.form-container.active {
+  display: flex;
+}
+
+form {
+  display: flex;
+  flex-direction: column;
+  align-items: left; /* 👈 ensures fields are truly centered */
+  gap: 0.75rem;
+}
+
+input, select {
+  padding: 10px;
+  background: #1A1A1A;
+  border: 1px solid #333;
+  border-radius: 8px;
+  color: #E0E0E0;
+  width: 150%;
+  max-width: 300px; /* 👈 restrict max width to keep it compact */
+}
+
+input::placeholder {
+  color: #888;
+}
+
+button[type="submit"] {
+  background: #00D09C;
+  border: none;
+  color: #0D0D0D;
+  font-weight: bold;
+  padding: 10px;
+  border-radius: 8px;
+  width: 80%;
+  margin: 0 auto;
+  cursor: pointer;
+  transition: background 0.3s ease;
+}
+
+button[type="submit"]:hover {
+  background: #00B88C;
+}
+
+.bottom-text, .forgot {
+  text-align: center;
+  font-size: 0.85rem;
+  color: #aaa;
+}
+
+a {
+  color: #00D09C;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+/* RESPONSIVE EXTENSIONS FOR ALL DEVICES */
+@media (max-width: 1024px) {
+  .auth-box {
+    padding: 1.5rem;
+    max-width: 90%;
+  }
+
+  input, select {
+    width: 100%;
+    max-width: 280px;
+  }
+
+  button[type="submit"] {
+    width: 90%;
+  }
+}
+
+@media (max-width: 768px) {
+  .main-container {
+    flex-direction: column;
+  }
+
+  .left-panel {
+    height: auto;
+    padding: 1.5rem;
+    text-align: center;
+  }
+
+  .quote-box {
+    font-size: 1.2rem;
+    max-width: 100%;
+  }
+
+  .quote-box p {
+    font-size: 0.95rem;
+  }
+
+  .right-panel {
+    padding: 1.5rem;
+    height: auto;
+  }
+
+  .auth-box {
+    padding: 1.5rem;
+    max-width: 95%;
+  }
+
+  .tabs button {
+    font-size: 0.95rem;
+    padding: 8px;
+  }
+
+  input, select {
+    font-size: 0.95rem;
+    padding: 9px;
+    max-width: 100%;
+  }
+
+  button[type="submit"] {
+    font-size: 1rem;
+    padding: 10px;
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .quote-box {
+    font-size: 1rem;
+  }
+
+  .quote-box p {
+    font-size: 0.85rem;
+  }
+
+  .tabs {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .tabs button {
+    font-size: 0.9rem;
+    padding: 8px 0;
+  }
+
+  .auth-box {
+    padding: 1rem;
+    box-shadow: none;
+  }
+
+  input, select {
+    font-size: 0.85rem;
+    padding: 8px;
+  }
+
+  .bottom-text,
+  .forgot {
+    font-size: 0.75rem;
+  }
+}
+

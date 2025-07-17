@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>FinSight</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+ <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+
+  <style>
+    html { scroll-behavior: smooth; }
+  </style>
+</head>
+<body>
+
+<!-- NAVBAR -->
+<nav class="navbar">
+  <div class="nav-container">
+    <div class="logo">FinSight</div>
+    <ul class="nav-links">
+      <li><a href="#hero">Home</a></li>
+      <li><a href="#analysis">Market Analysis</a></li>
+      <li><a href="#predictor">Stock Predictor</a></li>
+      <li><a href="#screener">Stock Screener</a></li>
+      <li><a href="{{ url_for('portfolio') }}">Portfolio</a></li>
+    </ul>
+    <div class="nav-user">
+      <span class="user-icon">👤</span>
+      <span class="username">{{ user }}</span>
+      <a class="logout-btn" href="{{ url_for('logout') }}">Logout</a>
+    </div>
+  </div>
+</nav>
+
+<!-- HERO SECTION -->
+<section id="hero" class="hero">
+  <h1>Empower Your Financial Journey</h1>
+  <p>Market insights. Predictive analytics. All in one platform.</p>
+  <a href="#analysis" class="btn">Explore Now</a>
+</section>
+<!-- ANALYSIS -->
+<section id="analysis" class="section">
+  <h2>Stock Market Analysis</h2>
+  <form method="POST" action="{{ url_for('analyze_stock') }}">
+    <input type="text" name="analysis_symbol" placeholder="Enter Stock Symbol (e.g. RELIANCE)" required>
+    <select name="analysis_exchange" required>
+      <option value="">Select Exchange</option>
+      <option value="NSE">NSE</option>
+      <option value="BSE">BSE</option>
+    </select>
+    <button type="submit">Analyze</button>
+  </form>
+  {% if candlestick %}
+  <div id="candlestick-chart" style="margin-top: 30px;"></div>
+  <script>
+    try {
+      const chartData = {{ candlestick | safe  }};
+      if (chartData.data && chartData.data.length > 0) {
+        Plotly.newPlot("candlestick-chart", chartData.data, chartData.layout);
+      } else {
+        document.getElementById("candlestick-chart").innerHTML = "<p style='color:#ff6b6b;'>No chart data available.</p>";
+      }
+    }catch (e) {
+      document.getElementById("candlestick-chart").innerHTML = "<p style='color:#ff6b6b;'>Chart rendering failed.</p>";
+    }
+  </script>
+{% endif %}
+
+
+ 
+  {% if analysis_error %}
+    <div class="output"><p class="error">{{ analysis_error }}</p></div>
+  {% elif analysis %}
+    <h3>Stock Info for {{ analysis.symbol }}</h3>
+    <div class="output">
+      <div class="output-box">Current Price: ₹{{ analysis.price }}</div>
+      <div class="output-box">Open: ₹{{ analysis.open }}</div>
+      <div class="output-box">Prev Close: ₹{{ analysis.previousClose }}</div>
+      <div class="output-box">Day High: ₹{{ analysis.dayHigh }}</div>
+      <div class="output-box">Day Low: ₹{{ analysis.dayLow }}</div>
+      <div class="output-box">Volume: {{ analysis.volume }}</div>
+      <div class="output-box">52W High: ₹{{ analysis.fiftyTwoWeekHigh }}</div>
+      <div class="output-box">52W Low: ₹{{ analysis.fiftyTwoWeekLow }}</div>
+    </div>
+
+   <form method="POST" action="{{ url_for('add_to_portfolio') }}" style="margin-top: 15px;">
+    <input type="hidden" name="symbol" value="{{ analysis.symbol }}">
+    <button type="submit" class="save-btn">+ Save to Portfolio</button>
+  </form>
+ {% endif %}
+</section>
+
+
+
+<!-- Screener Section -->
+<section id="screener" class="section">
+  <h2>Stock Screener</h2>
+
+  <!-- Screener Filter Form -->
+  <form method="POST" action="{{ url_for('screener') }}" class="screener-form">
+    <div class="form-grid-with-button">
+      <input type="number" name="min_marketcap" placeholder="Min Market Cap (in Cr)">
+      <input type="number" name="min_volume" placeholder="Min Volume">
+      <input type="number" name="max_pe" placeholder="Max PE Ratio">
+      <input type="number" name="max_pb" placeholder="Max PB Ratio">
+      <input type="number" name="min_dividend" placeholder="Min Dividend Yield (%)">
+      <input type="number" name="min_bookvalue" placeholder="Min Book Value/Share">
+      <button type="submit" class="run">Run Screener</button>
+    </div>
+  </form>
+   {% if screener_data %}
+    <h3>Screener Results</h3>
+   {% endif %}
+
+    <div class="output">
+      {% for stock in screener_data %}
+        <div class="output-box">
+          <strong>{{ stock.symbol }}</strong> — ₹{{ stock.price }}<br>
+          MCap: ₹{{ stock.marketCap }} Cr<br>
+          Vol: {{ stock.volume }}<br>
+          PE: {{ stock.pe }} 
+          PB: {{ stock.pb }}<br>
+          DY: {{ stock.dividendYield }}% 
+          Book Value: ₹{{ stock.bookValue }}<br>
+          52W High: ₹{{ stock.high }} 
+          52W Low: ₹{{ stock.low }}
+        </div>
+      {% endfor %}
+    </div>
+  {% if screener_error %}
+    <p class="error">{{ screener_error }}</p>
+  {% endif %}
+</section>
+
+
+  
+<!-- PREDICTOR -->
+<section id="predictor" class="section">
+  <h2>Stock Price Prediction</h2>
+  <form method="POST" action="{{ url_for('predict_stock') }}">
+    <input type="text" name="stock_symbol" placeholder="Enter Stock Symbol (e.g. INFY)" required>
+    <select name="exchange" required>
+      <option value="">Select Exchange</option>
+      <option value="NSE">NSE</option>
+      <option value="BSE">BSE</option>
+    </select>
+    <button type="submit">Predict</button>
+  </form>
+
+  {% if forecast %}
+    <div class="prediction-result">
+      <h3>7-Day Forecast for {{ symbol }}</h3>
+      <table class="prediction-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Predicted Price (₹)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for date, price in forecast %}
+          <tr>
+            <td>{{ date }}</td>
+            <td>₹{{ price | round(2) }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% elif error %}
+    <div class="output"><p class="error">{{ error }}</p></div>
+  {% endif %}
+</section>
+
+<!-- FOOTER -->
+<footer>
+  <p>&copy; 2025 FinSight. All rights reserved.</p>
+</footer>
+
+<!-- Smooth Scroll on Load -->
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const scrollTarget = "{{ scroll_to|default('') }}";
+    if (scrollTarget) {
+      const section = document.getElementById(scrollTarget);
+      if (section) {
+        section.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+  });
+</script>
+<!-- Floating Predict Now Button -->
+<a href="#predictor" id="predict-btn" title="Try our Stock Predictor!">💹</a>
+<span class="predict-label">Predict</span>
+
+<script>
+  const menuToggle = document.getElementById('menu-toggle');
+  const mobileMenu = document.getElementById('mobile-menu');
+  const closeBtn = document.getElementById('close-menu');
+
+  // Open menu
+  menuToggle.addEventListener('click', () => {
+    mobileMenu.classList.add('active');
+  });
+
+  // Close on cross button click
+  closeBtn.addEventListener('click', () => {
+    mobileMenu.classList.remove('active');
+  });
+
+  // Close on menu item click
+  document.querySelectorAll('#mobile-menu a').forEach(link => {
+    link.addEventListener('click', () => {
+      mobileMenu.classList.remove('active');
+    });
+  });
+</script>
+
+</body>
+</html>

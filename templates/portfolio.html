@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>My Portfolio - FinSight</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+<!-- NAVBAR -->
+<nav class="navbar">
+  <div class="nav-container">
+    <div class="logo">FinSight</div>
+    <ul class="nav-links">
+      <li><a href="{{ url_for('index') }}#hero">Home</a></li>
+      <li><a href="{{ url_for('index') }}#analysis">Market Analysis</a></li>
+      <li><a href="{{ url_for('index') }}#predictor">Stock Predictor</a></li>
+      <li><a href="{{ url_for('index') }}#screener">Stock Screener</a></li>
+      <li><a href="{{ url_for('portfolio') }}">Portfolio</a></li>
+    </ul>
+    <div class="nav-user">
+      <span class="user-icon">👤</span>
+      <span class="username">{{ user }}</span>
+      <a class="logout-btn" href="{{ url_for('logout') }}">Logout</a>
+    </div>
+  </div>
+</nav>
+
+<!-- PORTFOLIO SECTION -->
+<section class="section" id="portfolio">
+  <h2>My Portfolio</h2>
+
+  {% if stocks %}
+    <div class="output">
+      {% for stock in stocks %}
+        <div class="output-box">
+          <strong>{{ stock.symbol }}</strong> — ₹{{ stock.price }}<br>
+          52W High: ₹{{ stock.high }} | 52W Low: ₹{{ stock.low }}
+          <form method="POST" action="{{ url_for('remove_from_portfolio') }}" style="margin-top: 10px;">
+            <input type="hidden" name="symbol" value="{{ stock.symbol }}">
+            <button type="submit" class="remove-btn">Remove</button>
+          </form>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="error">Your portfolio is empty.</p>
+  {% endif %}
+</section>
+
+<footer>
+  <p>&copy; 2025 FinSight. All rights reserved.</p>
+</footer>
+
+</body>
+</html>
