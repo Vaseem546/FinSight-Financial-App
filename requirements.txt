@@ -11,3 +11,4 @@ gunicorn==21.2.0
 # Add this to fix distutils issue in Python 3.12+
 setuptools==68.2.2
 wheel
+reportlab
