@@ -9,3 +9,6 @@ tensorflow==2.11.1
 scikit-learn==1.2.2
 gunicorn==21.2.0
 werkzeug==3.0.1
+# Add this to fix distutils issue in Python 3.12+
+setuptools==68.2.2
+wheel
