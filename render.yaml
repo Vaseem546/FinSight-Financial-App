@@ -9,7 +9,8 @@ services:
       pip install --upgrade pip setuptools wheel
       pip install --no-cache-dir --prefer-binary -r requirements.txt
 
-    startCommand: gunicorn app:app  # Ensure your Flask app is named 'app' in app.py
+   startCommand: gunicorn --chdir . app:app
+
 
     build:
       pythonVersion: 3.10
