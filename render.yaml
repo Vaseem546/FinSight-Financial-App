@@ -2,26 +2,14 @@ services:
   - type: web
     name: fin-sight-app
     env: python
-    region: oregon  # Optional: choose closest region for better latency
-    branch: main  # Ensure your repo’s default branch is 'main'
-
-    buildCommand: |
-      pip install --upgrade pip setuptools wheel
-      pip install --no-cache-dir --prefer-binary -r requirements.txt
-
-   startCommand: gunicorn --chdir . app:app
-
-
+    region: oregon  # or your nearest region
+    branch: main
+    buildCommand: pip install --prefer-binary -r requirements.txt
+    startCommand: gunicorn --chdir . app:app
     build:
-      pythonVersion: 3.10
-
+      pythonVersion: 3.11  # ✅ Avoid 3.13 — not compatible with some packages
     preInstall:
       - apt-get update && apt-get install -y build-essential libpq-dev
-
     envVars:
       - key: ENV
         value: production
-      - key: SECRET_KEY
-        value: your-secret-key-here  # Replace with actual secret key
-      - key: MONGO_URI
-        value: your-mongodb-uri-here  # Add if using MongoDB
