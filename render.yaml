@@ -4,9 +4,11 @@ services:
     env: python
     region: oregon  # Optional: choose closest region for better latency
     branch: main  # Ensure your repo’s default branch is 'main'
-    
-    buildCommand: pip install --no-cache-dir --prefer-binary -r requirements.txt
-    
+
+    buildCommand: |
+      pip install --upgrade pip setuptools wheel
+      pip install --no-cache-dir --prefer-binary -r requirements.txt
+
     startCommand: gunicorn app:app  # Ensure your Flask app is named 'app' in app.py
 
     build:
