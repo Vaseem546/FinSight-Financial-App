@@ -37,18 +37,22 @@ NIFTY_50 = [f.replace('.h5', '') for f in os.listdir("models") if f.endswith('.h
 def home():
     return redirect(url_for('login'))
 
-@app.route('/login', methods=["GET", "POST"])
+@app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         email = request.form['email']
         password = request.form['password']
         user = users.find_one({'email': email})
+
         if user and check_password_hash(user['password'], password):
             session['user'] = user['name']
             return redirect(url_for('dashboard'))
         else:
             return render_template("login_register.html", show="login", error="Invalid credentials")
+
     return render_template("login_register.html", show="login")
+ 
+
 
 @app.route('/register', methods=["POST"])
 def register():
