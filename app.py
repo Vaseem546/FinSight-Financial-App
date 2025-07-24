@@ -47,8 +47,12 @@ def login():
         if user and check_password_hash(user['password'], password):
             session['user'] = email
             return redirect(url_for('index'))
-        return render_template('login_register.html', login_error="Invalid credentials")
-    return render_template('login_register.html')
+        # Show login form with error
+        return render_template('login_register.html', login_error="Invalid credentials", show="login")
+    
+    # Show login form by default
+    return render_template('login_register.html', show="login")
+
 
 @app.route('/register', methods=['POST'])
 def register():
