@@ -43,10 +43,10 @@ def login():
     if request.method == 'POST':
         email = request.form['email']
         password = request.form['password']
-        user = users.find_one({'email': email, 'password': password})
-        if user:
-            session['user'] = user['email']
-            return redirect(url_for('dashboard'))  # ✅ Redirect after successful login
+        user = users.find_one({'email': email})
+        if user and user['password'] == password:
+            session['user'] = user['name']
+            return redirect(url_for('dashboard'))
         else:
             return render_template("login_register.html", show="login", error="Invalid credentials")
     return render_template("login_register.html", show="login")
