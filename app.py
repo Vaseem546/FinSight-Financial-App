@@ -45,7 +45,7 @@ def login():
         password = request.form['password']
         user = users.find_one({'email': email, 'password': password})
         if user:
-            session['user'] = user['name']
+            session['user'] = user['email']
             return redirect(url_for('dashboard'))  # ✅ Redirect after successful login
         else:
             return render_template("login_register.html", show="login", error="Invalid credentials")
