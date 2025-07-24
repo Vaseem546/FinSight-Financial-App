@@ -22,7 +22,10 @@ app = Flask(__name__)
 load_dotenv()
 app.secret_key =  os.getenv("SECRET_KEY")
 # MongoDB config (if used)
-app.config["MONGO_URI"] = "mongodb://localhost:27017/finsight"
+app.config["MONGO_URI"] = os.environ.get("MONGO_URI")
+mongo = PyMongo(app)
+db = mongo.db
+users = db.users
 mongo = PyMongo(app)
 
 # Load all stocks from CSV
@@ -62,12 +65,12 @@ def register():
     password = request.form['password']
 
     if users.find_one({'email': email}):
-        return render_template('login_register.html', register_error="User already exists")
+        return render_template('login_register.html', register_error="User already exists", show="register")
 
     hashed_pw = generate_password_hash(password)
     users.insert_one({'email': email, 'password': hashed_pw, 'username': username})
-    return render_template('login_register.html', register_success="Registration successful")
-
+    return render_template('login_register.html', success="Registration successful", show="register")
+ 
 @app.route('/logout')
 def logout():
     session.pop('user', None)
