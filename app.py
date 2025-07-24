@@ -35,48 +35,45 @@ stocks_df = pd.read_csv("all_stocks.csv")
 # ---------------- ROUTES ---------------- #
 
 @app.route('/')
-def index():
-    if 'user' in session:
-        return render_template('index.html', user=session['user'], forecast=None, analysis=None, error=None, analysis_error=None, candlestick=None)
+def home():
     return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    users = mongo.db.users
     if request.method == 'POST':
-        email = request.form['email'].strip().lower()
+        email = request.form['email']
         password = request.form['password']
-        user = users.find_one({'email': email})
-        if user and check_password_hash(user['password'], password):
-            session['user'] = email
-            return redirect(url_for('index'))
-        # Show login form with error
-        return render_template('login_register.html', login_error="Invalid credentials", show="login")
-    
-    # Show login form by default
-    return render_template('login_register.html', show="login")
-
+        user = users.find_one({'email': email, 'password': password})
+        if user:
+            session['user'] = user['name']
+            return redirect(url_for('dashboard'))  # ✅ Redirect after successful login
+        else:
+            return render_template("login_register.html", show="login", error="Invalid credentials")
+    return render_template("login_register.html", show="login")
 
 @app.route('/register', methods=['POST'])
 def register():
-    users = mongo.db.users
-    username = request.form['username'].strip()
-    email = request.form['email'].strip().lower()
+    name = request.form['name']
+    email = request.form['email']
     password = request.form['password']
 
     if users.find_one({'email': email}):
-        return render_template('login_register.html', register_error="User already exists", show="register")
+        return render_template("login_register.html", show="register", error="Email already exists")
+    
+    users.insert_one({'name': name, 'email': email, 'password': password})
+    session['user'] = name
+    return redirect(url_for('dashboard'))
 
-    hashed_pw = generate_password_hash(password)
-    users.insert_one({'email': email, 'password': hashed_pw, 'username': username})
-    return render_template('login_register.html', success="Registration successful", show="register")
- 
+@app.route('/dashboard')
+def dashboard():
+    if 'user' in session:
+        return render_template('index.html', user=session['user'])
+    return redirect(url_for('login'))
+
 @app.route('/logout')
 def logout():
     session.pop('user', None)
     return redirect(url_for('login'))
-
-
 
 
 # ---------------- STOCK ANALYSIS ---------------- #
