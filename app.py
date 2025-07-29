@@ -24,7 +24,14 @@ def init_db():
             email TEXT UNIQUE NOT NULL,
             password TEXT NOT NULL
         )''')
+        conn.execute('''CREATE TABLE IF NOT EXISTS portfolio (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_email TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            added_on TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )''')
         conn.commit()
+
 
 init_db()
 
@@ -61,8 +68,11 @@ def get_scaler(symbol):
 # ----------- Routes -----------
 
 @app.route('/')
-def home():
-    return redirect(url_for('login'))
+def index():
+    if 'user' in session:
+        return render_template('index.html', user=session['user'])
+    return render_template('login_register.html', show='login')
+
 
 @app.route('/login', methods=["GET", "POST"])
 def login():
@@ -240,6 +250,64 @@ def predict_stock():
     forecast = list(zip(dates, final))
 
     return render_template("index.html", forecast=forecast, symbol=symbol, scroll_to="predictor", user=session.get('user'))
+
+
+@app.route("/portfolio")
+def portfolio():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+
+    user_email = session['user']
+    with sqlite3.connect("users.db") as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT symbol FROM portfolio WHERE user_email = ?", (user_email,))
+        symbols = cur.fetchall()
+
+    stocks = []
+    for (symbol,) in symbols:
+        try:
+            ticker = yf.Ticker(symbol + ".NS")
+            info = ticker.info
+            stocks.append({
+                'symbol': symbol,
+                'price': info.get('currentPrice', 0),
+                'high': info.get('fiftyTwoWeekHigh', 0),
+                'low': info.get('fiftyTwoWeekLow', 0)
+            })
+        except Exception:
+            continue
+
+    return render_template("portfolio.html", stocks=stocks, user=user_email)
+
+@app.route("/add_to_portfolio", methods=["POST"])
+def add_to_portfolio():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+
+    user_email = session['user']
+    symbol = request.form.get('symbol', '').upper()
+
+    with sqlite3.connect("users.db") as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM portfolio WHERE user_email = ? AND symbol = ?", (user_email, symbol))
+        if not cur.fetchone():
+            cur.execute("INSERT INTO portfolio (user_email, symbol) VALUES (?, ?)", (user_email, symbol))
+            conn.commit()
+    return redirect(url_for('portfolio'))
+
+@app.route("/remove_from_portfolio", methods=["POST"])
+def remove_from_portfolio():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+
+    user_email = session['user']
+    symbol = request.form.get('symbol', '').upper()
+
+    with sqlite3.connect("users.db") as conn:
+        conn.execute("DELETE FROM portfolio WHERE user_email = ? AND symbol = ?", (user_email, symbol))
+        conn.commit()
+
+    return redirect(url_for('portfolio'))
 
 # -------- Run Server --------
 if __name__ == "__main__":

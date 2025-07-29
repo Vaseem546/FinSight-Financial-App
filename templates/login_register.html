@@ -53,7 +53,7 @@
             {% elif success %}
               <p class="success">{{ success }}</p>
             {% endif %}
-            <form method="POST" action="{{ url_for('login') }}">
+            <form method="POST" action="{{ url_for('register') }}">  <!-- ✅ FIXED HERE -->
               <input type="hidden" name="action" value="register">
               <div class="form-group">
                 <input type="email" name="email" placeholder="Email" required />
@@ -65,6 +65,7 @@
               <p class="bottom-text">Already have an account? <a href="#" id="showLogin">Login</a></p>
             </form>
           </div>
+
         </div>
       </div>
     </div>
