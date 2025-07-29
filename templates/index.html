@@ -137,7 +137,7 @@
 <!-- PREDICTOR -->
 <section id="predictor" class="section">
   <h2>Stock Price Prediction</h2>
-  <form method="POST" action="{{ url_for('predict_stock') }}">
+  <form method="POST" action="{{ url_for('predict') }}">
     <input type="text" name="stock_symbol" placeholder="Enter Stock Symbol (e.g. INFY)" required>
     <select name="exchange" required>
       <option value="">Select Exchange</option>
