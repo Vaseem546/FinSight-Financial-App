@@ -125,7 +125,7 @@ def analyze():
 # -------------------- STOCK SCREENER --------------------
 top_stocks = ['RELIANCE.BSE', 'TCS.BSE', 'INFY.BSE', 'ICICIBANK.BSE', 'HDFCBANK.BSE']
 
-@app.route('/screener')
+@app.route('/screener', methods=['GET','POST'])
 def screener():
     if 'user' not in session:
         return redirect(url_for('login'))
