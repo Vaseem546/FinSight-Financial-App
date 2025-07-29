@@ -143,17 +143,24 @@ def screener():
     return render_template("index.html", user=session['user'], screener=results)
 
 # -------------------- STOCK PREDICTOR --------------------
-model = tf.keras.models.load_model("models/model.h5")
-
-scaler = joblib.load("scaler.pkl")
-
 @app.route('/predict', methods=['POST'])
 def predict():
     if 'user' not in session:
         return redirect(url_for('login'))
 
     symbol = request.form['predict_symbol'].upper()
+
     try:
+        # Correct file paths
+        model_path = f"models/{symbol}.h5"
+        scaler_path = f"models/{symbol}.scaler.save"
+
+        if not os.path.exists(model_path) or not os.path.exists(scaler_path):
+            raise FileNotFoundError("Model or Scaler not found for this symbol.")
+
+        model = tf.keras.models.load_model(model_path)
+        scaler = joblib.load(scaler_path)
+
         data, _ = ts.get_daily_adjusted(symbol=symbol, outputsize='compact')
         df = data.sort_index()
         close_prices = df['4. close'].values[-60:]
@@ -166,10 +173,12 @@ def predict():
         predicted = model.predict(X_input)
         predicted_price = scaler.inverse_transform(predicted)[0][0]
 
-        return render_template("index.html", user=session['user'], prediction={"symbol": symbol, "price": round(predicted_price, 2)})
+        return render_template("index.html", user=session['user'],
+                               prediction={"symbol": symbol, "price": round(predicted_price, 2)})
 
     except Exception as e:
-        return render_template("index.html", user=session['user'], error=f"No data to predict for {symbol}: {str(e)}")
+        return render_template("index.html", user=session['user'],
+                               error=f"No data to predict for {symbol}: {str(e)}")
 
 # -------------------- PORTFOLIO --------------------
 @app.route('/portfolio')

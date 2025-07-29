@@ -6,8 +6,6 @@ __pycache__/
 *.pyd
 
 # Ignore environment files
-.env
-
 # Ignore OS files
 .DS_Store
 Thumbs.db
@@ -16,8 +14,6 @@ Thumbs.db
 *.log
 
 # Ignore model weights or large data
-*.h5
-*.pkl
 *.ckpt
 
 # Ignore Jupyter Notebook checkpoints
