@@ -1,0 +1,6 @@
+syedvaseem546
+r8hDuaJgc6TykbJq
+
+
+
+mongodb+srv://syedvaseem546:<db_password>@cluster0.gucdkzg.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0
