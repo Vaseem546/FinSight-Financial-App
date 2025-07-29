@@ -1,288 +1,223 @@
+import os
+import sqlite3
+import numpy as np
+import pandas as pd
+import tensorflow as tf
 from flask import Flask, render_template, request, redirect, session, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
-import sqlite3
-import yfinance as yf
-import pandas as pd
-import os
-import json
-import datetime
-import numpy as np
-import joblib
+from datetime import datetime
+from sklearn.preprocessing import MinMaxScaler
 from plotly.utils import PlotlyJSONEncoder
-from tensorflow.keras.models import load_model
 import plotly.graph_objs as go
+import json
+from alpha_vantage.timeseries import TimeSeries
+import joblib
+
+# Load Alpha Vantage API key
+ALPHA_KEY = os.getenv("ALPHA_VANTAGE_KEY")
+ts = TimeSeries(key=ALPHA_KEY, output_format='pandas')
 
 app = Flask(__name__)
-app.secret_key = "finsight_secret_key"
+app.secret_key = 'your_secret_key_here'
 
-# --- DB Setup ---
-def init_db():
-    with sqlite3.connect("users.db") as conn:
-        conn.execute('''CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            email TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL
-        )''')
-        conn.execute('''CREATE TABLE IF NOT EXISTS portfolio (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_email TEXT NOT NULL,
-            symbol TEXT NOT NULL,
-            added_on TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )''')
+# -------------------- DB SETUP --------------------
+def init_sqlite():
+    db_path = os.getenv("DATABASE_PATH", "users.db")
+    if not os.path.exists(db_path):
+        conn = sqlite3.connect(db_path)
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS users (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT UNIQUE NOT NULL,
+                password TEXT NOT NULL
+            )
+        ''')
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS portfolio (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_email TEXT NOT NULL,
+                symbol TEXT NOT NULL
+            )
+        ''')
         conn.commit()
+        conn.close()
 
-init_db()
+init_sqlite()
 
-# --- Model Setup ---
-stocks_df = pd.read_csv("all_stocks.csv")
-NIFTY_50 = [f.replace('_model.h5', '') for f in os.listdir("models") if f.endswith('_model.h5')]
-model_cache = {}
-scaler_cache = {}
+def get_db():
+    db_path = os.getenv("DATABASE_PATH", "users.db")
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    return conn
 
-def get_model(symbol):
-    if symbol in model_cache:
-        return model_cache[symbol]
-    path = f"models/{symbol}_model.h5"
-    if os.path.exists(path):
-        model = load_model(path)
-        model_cache[symbol] = model
-        return model
-    return None
-
-def get_scaler(symbol):
-    if symbol in scaler_cache:
-        return scaler_cache[symbol]
-    path = f"models/{symbol}_scaler.save"
-    if os.path.exists(path):
-        scaler = joblib.load(path)
-        scaler_cache[symbol] = scaler
-        return scaler
-    return None
-
-# --- Safe Yahoo Finance fetch ---
-def safe_fetch(ticker_func, default={}):
-    try:
-        return ticker_func()
-    except Exception:
-        return default
-
-# --- Routes ---
-@app.route('/')
-def root():
-    if 'user' in session:
-        return redirect(url_for('dashboard'))
-    return render_template('login_register.html', show='login')
-
-@app.route('/login', methods=["GET", "POST"])
+# -------------------- ROUTES --------------------
+@app.route('/', methods=['GET', 'POST'])
+@app.route('/login', methods=['GET', 'POST'])
 def login():
-    if request.method == "POST":
+    error, success = None, None
+    show = request.form.get("action") or request.args.get("show") or "login"
+
+    if request.method == 'POST':
+        action = request.form['action']
         email = request.form['email']
         password = request.form['password']
-        with sqlite3.connect("users.db") as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT password FROM users WHERE email = ?", (email,))
-            result = cur.fetchone()
-            if result and check_password_hash(result[0], password):
+        conn = get_db()
+        cursor = conn.cursor()
+
+        if action == 'login':
+            cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
+            user = cursor.fetchone()
+            if user and check_password_hash(user['password'], password):
                 session['user'] = email
-                return redirect(url_for("dashboard"))
-            return render_template("login_register.html", show="login", error="Invalid credentials")
-    return render_template("login_register.html", show="login")
+                return redirect(url_for('index'))
+            else:
+                error = "Invalid credentials"
 
-@app.route('/register', methods=["POST"])
-def register():
-    email = request.form['email']
-    password = request.form['password']
-    with sqlite3.connect("users.db") as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT * FROM users WHERE email = ?", (email,))
-        if cur.fetchone():
-            return render_template("login_register.html", show="register", error="Email already exists")
-        hashed = generate_password_hash(password)
-        cur.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, hashed))
-        conn.commit()
-        session['user'] = email
-        return redirect(url_for("dashboard"))
+        elif action == 'register':
+            cursor.execute("SELECT * FROM users WHERE email = ?", (email,))
+            if cursor.fetchone():
+                error = "User already exists"
+            else:
+                hashed_pw = generate_password_hash(password)
+                cursor.execute("INSERT INTO users (email, password) VALUES (?, ?)", (email, hashed_pw))
+                conn.commit()
+                success = "Registered successfully! Please log in."
+                show = 'login'
 
-@app.route("/dashboard")
-def dashboard():
-    if 'user' not in session:
-        return redirect(url_for("login"))
-    return render_template("index.html", user=session['user'])
+        conn.close()
 
-@app.route("/logout")
+    return render_template('login_register.html', error=error, success=success, show=show)
+
+@app.route('/logout')
 def logout():
-    session.clear()
-    return redirect(url_for("login"))
+    session.pop('user', None)
+    return redirect(url_for('login'))
 
-@app.route("/analyze_stock", methods=["POST"])
-def analyze_stock():
+@app.route('/index')
+def index():
     if 'user' not in session:
-        return redirect(url_for("login"))
+        return redirect(url_for('login'))
+    return render_template('index.html', user=session['user'])
 
-    symbol = request.form.get("analysis_symbol", "").upper()
-    exchange = request.form.get("analysis_exchange", "")
-    symbol_full = symbol + (".NS" if exchange == "NSE" else ".BO" if exchange == "BSE" else "")
+# -------------------- MARKET ANALYSIS --------------------
+@app.route('/analyze', methods=['POST'])
+def analyze():
+    if 'user' not in session:
+        return redirect(url_for('login'))
 
-    if not symbol_full:
-        return render_template("index.html", analysis_error="Invalid exchange", scroll_to="analysis", user=session['user'])
-
+    symbol = request.form['symbol'].upper()
     try:
-        stock = yf.Ticker(symbol_full)
-        hist = safe_fetch(lambda: stock.history(period="1mo"), pd.DataFrame())
-        info = safe_fetch(lambda: stock.info)
+        data, _ = ts.get_daily_adjusted(symbol=symbol, outputsize='compact')
+        if data.empty:
+            raise ValueError("No data found")
 
-        if hist.empty:
-            raise Exception("No historical data")
+        current_price = float(data.iloc[-1]['4. close'])
+        high_52w = data['2. high'].max()
+        low_52w = data['3. low'].min()
 
-        fig = go.Figure(data=[go.Candlestick(
-            x=hist.index.strftime('%Y-%m-%d'),
-            open=hist['Open'], high=hist['High'], low=hist['Low'], close=hist['Close']
-        )])
-        fig.update_layout(title=f"{symbol} Chart", template="plotly_dark")
-        candlestick_json = json.dumps(fig, cls=PlotlyJSONEncoder)
+        return render_template("index.html", user=session['user'],
+                               analysis={"symbol": symbol, "price": current_price,
+                                         "high": high_52w, "low": low_52w})
+    except Exception as e:
+        return render_template("index.html", user=session['user'], error=f"Failed to fetch stock info: {str(e)}")
 
-        stock_info = {
-            'symbol': symbol,
-            'price': round(info.get('currentPrice', 0), 2),
-            'open': round(info.get('open', 0), 2),
-            'previousClose': round(info.get('previousClose', 0), 2),
-            'dayHigh': round(info.get('dayHigh', 0), 2),
-            'dayLow': round(info.get('dayLow', 0), 2),
-            'volume': info.get('volume', 0),
-            'fiftyTwoWeekHigh': info.get('fiftyTwoWeekHigh'),
-            'fiftyTwoWeekLow': info.get('fiftyTwoWeekLow')
-        }
+# -------------------- STOCK SCREENER --------------------
+top_stocks = ['RELIANCE.BSE', 'TCS.BSE', 'INFY.BSE', 'ICICIBANK.BSE', 'HDFCBANK.BSE']
 
-        return render_template("index.html", analysis=stock_info, candlestick=candlestick_json, scroll_to="analysis", user=session['user'])
-    except:
-        return render_template("index.html", analysis_error="Failed to fetch stock info.", scroll_to="analysis", user=session['user'])
-
-@app.route("/screener", methods=["POST"])
+@app.route('/screener')
 def screener():
     if 'user' not in session:
-        return redirect(url_for("login"))
-
-    form = request.form
-    filters = {
-        'min_marketcap': float(form.get("min_marketcap") or 0),
-        'min_volume': float(form.get("min_volume") or 0),
-        'max_pe': float(form.get("max_pe") or 1000),
-        'max_pb': float(form.get("max_pb") or 1000),
-        'min_dividend': float(form.get("min_dividend") or 0),
-        'min_bookvalue': float(form.get("min_bookvalue") or 0)
-    }
+        return redirect(url_for('login'))
 
     results = []
-    for _, row in stocks_df.iterrows():
+    for symbol in top_stocks:
         try:
-            info = safe_fetch(lambda: yf.Ticker(row['Symbol'] + ".NS").info)
-            market_cap = info.get('marketCap', 0) / 1e7
-            volume = info.get('volume', 0)
-            pe = info.get('trailingPE', 0)
-            pb = info.get('priceToBook', 0)
-            dividend = (info.get('dividendYield', 0) or 0) * 100
-            book_value = info.get('bookValue', 0)
-            price = info.get('currentPrice', 0)
-            high = info.get('fiftyTwoWeekHigh', 0)
-            low = info.get('fiftyTwoWeekLow', 0)
+            quote, _ = ts.get_quote_endpoint(symbol=symbol)
+            price = float(quote['05. price'])
+            change = float(quote['10. change percent'].replace('%', ''))
+            results.append({"symbol": symbol, "price": price, "change": change})
+        except Exception:
+            continue
 
-            if (market_cap >= filters['min_marketcap'] and volume >= filters['min_volume'] and
-                pe <= filters['max_pe'] and pb <= filters['max_pb'] and
-                dividend >= filters['min_dividend'] and book_value >= filters['min_bookvalue']):
+    return render_template("index.html", user=session['user'], screener=results)
 
-                results.append({"symbol": row['Symbol'], "price": price, "marketCap": round(market_cap, 2),
-                                 "volume": volume, "pe": pe, "pb": pb, "dividendYield": round(dividend, 2),
-                                 "bookValue": book_value, "high": high, "low": low})
+# -------------------- STOCK PREDICTOR --------------------
+model = tf.keras.models.load_model("models/model.h5")
+
+scaler = joblib.load("scaler.pkl")
+
+@app.route('/predict', methods=['POST'])
+def predict():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+
+    symbol = request.form['predict_symbol'].upper()
+    try:
+        data, _ = ts.get_daily_adjusted(symbol=symbol, outputsize='compact')
+        df = data.sort_index()
+        close_prices = df['4. close'].values[-60:]
+
+        if len(close_prices) < 60:
+            raise ValueError("Not enough data")
+
+        scaled = scaler.transform(close_prices.reshape(-1, 1))
+        X_input = np.array([scaled])
+        predicted = model.predict(X_input)
+        predicted_price = scaler.inverse_transform(predicted)[0][0]
+
+        return render_template("index.html", user=session['user'], prediction={"symbol": symbol, "price": round(predicted_price, 2)})
+
+    except Exception as e:
+        return render_template("index.html", user=session['user'], error=f"No data to predict for {symbol}: {str(e)}")
+
+# -------------------- PORTFOLIO --------------------
+@app.route('/portfolio')
+def portfolio():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("SELECT symbol FROM portfolio WHERE user_email = ?", (session['user'],))
+    symbols = [row['symbol'] for row in cursor.fetchall()]
+    stocks = []
+
+    for sym in symbols:
+        try:
+            data, _ = ts.get_daily_adjusted(symbol=sym, outputsize='compact')
+            current_price = float(data.iloc[-1]['4. close'])
+            high = data['2. high'].max()
+            low = data['3. low'].min()
+            stocks.append({"symbol": sym, "price": current_price, "high": high, "low": low})
         except:
             continue
 
-    return render_template("index.html", screener_data=results, scroll_to="screener", user=session['user'])
+    return render_template("portfolio.html", stocks=stocks, user=session['user'])
 
-@app.route("/predict_stock", methods=["POST"])
-def predict_stock():
-    if 'user' not in session:
-        return redirect(url_for("login"))
-
-    symbol = request.form.get('stock_symbol', '').strip().upper()
-    exchange = request.form.get('exchange', '').strip()
-    symbol_ext = symbol + (".NS" if exchange == "NSE" else ".BO" if exchange == "BSE" else "")
-
-    model = get_model(symbol)
-    scaler = get_scaler(symbol)
-
-    if not model or not scaler:
-        return render_template("index.html", error="Model or scaler not found. Please train first.", scroll_to="predictor", user=session['user'])
-
-    end = datetime.datetime.today()
-    start = end - datetime.timedelta(days=365 * 3)
-
-    df = safe_fetch(lambda: yf.download(symbol_ext, start=start, end=end), pd.DataFrame())
-    if df.empty or 'Close' not in df:
-        return render_template("index.html", error=f"No data to predict for {symbol}", scroll_to="predictor", user=session['user'])
-
-    data = df['Close'].values.reshape(-1, 1)
-    scaled = scaler.transform(data)
-    input_seq = scaled[-60:]
-    preds, dates = [], []
-
-    for i in range(7):
-        pred = model.predict(input_seq.reshape(1, 60, 1), verbose=0)[0][0]
-        preds.append(pred)
-        input_seq = np.append(input_seq, [[pred]], axis=0)[1:]
-        dates.append((end + datetime.timedelta(days=i + 1)).strftime('%d %b %Y'))
-
-    final = scaler.inverse_transform(np.array(preds).reshape(-1, 1)).flatten()
-    forecast = list(zip(dates, final))
-    return render_template("index.html", forecast=forecast, symbol=symbol, scroll_to="predictor", user=session['user'])
-
-@app.route("/portfolio")
-def portfolio():
-    if 'user' not in session:
-        return redirect(url_for("login"))
-
-    user_email = session['user']
-    with sqlite3.connect("users.db") as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT symbol FROM portfolio WHERE user_email = ?", (user_email,))
-        symbols = cur.fetchall()
-
-    stocks = []
-    for (symbol,) in symbols:
-        info = safe_fetch(lambda: yf.Ticker(symbol + ".NS").info)
-        stocks.append({
-            'symbol': symbol,
-            'price': info.get('currentPrice', 0),
-            'high': info.get('fiftyTwoWeekHigh', 0),
-            'low': info.get('fiftyTwoWeekLow', 0)
-        })
-    return render_template("portfolio.html", stocks=stocks, user=user_email)
-
-@app.route("/add_to_portfolio", methods=["POST"])
+@app.route('/add_to_portfolio', methods=['POST'])
 def add_to_portfolio():
     if 'user' not in session:
-        return redirect(url_for("login"))
+        return redirect(url_for('login'))
 
-    user_email = session['user']
-    symbol = request.form.get('symbol', '').upper()
-    with sqlite3.connect("users.db") as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT 1 FROM portfolio WHERE user_email = ? AND symbol = ?", (user_email, symbol))
-        if not cur.fetchone():
-            cur.execute("INSERT INTO portfolio (user_email, symbol) VALUES (?, ?)", (user_email, symbol))
-            conn.commit()
+    symbol = request.form['symbol'].upper()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO portfolio (user_email, symbol) VALUES (?, ?)", (session['user'], symbol))
+    conn.commit()
     return redirect(url_for('portfolio'))
 
-@app.route("/remove_from_portfolio", methods=["POST"])
+@app.route('/remove_from_portfolio', methods=['POST'])
 def remove_from_portfolio():
     if 'user' not in session:
-        return redirect(url_for("login"))
+        return redirect(url_for('login'))
 
-    user_email = session['user']
-    symbol = request.form.get('symbol', '').upper()
-    with sqlite3.connect("users.db") as conn:
-        conn.execute("DELETE FROM portfolio WHERE user_email = ? AND symbol = ?", (user_email, symbol))
-        conn.commit()
+    symbol = request.form['symbol'].upper()
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM portfolio WHERE user_email = ? AND symbol = ?", (session['user'], symbol))
+    conn.commit()
     return redirect(url_for('portfolio'))
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     app.run(debug=True)
