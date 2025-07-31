@@ -106,7 +106,7 @@ def analyze():
     if 'user' not in session:
         return redirect(url_for('login'))
 
-    symbol = request.form['symbol'].upper()
+    symbol = request.form['analysis_symbol'].upper()
     try:
         data, _ = ts.get_daily_adjusted(symbol=symbol, outputsize='compact')
         if data.empty:
@@ -140,7 +140,7 @@ def screener():
         except Exception:
             continue
 
-    return render_template("index.html", user=session['user'], screener=results)
+    return render_template("index.html", user=session['user'], screener_data=results)
 
 # -------------------- STOCK PREDICTOR --------------------
 @app.route('/predict', methods=['POST'])
@@ -151,9 +151,8 @@ def predict():
     symbol = request.form['predict_symbol'].upper()
 
     try:
-        # Correct file paths
-        model_path = f"models/{symbol}.h5"
-        scaler_path = f"models/{symbol}.scaler.save"
+        model_path = f"models/{symbol}_model.h5"
+        scaler_path = f"models/{symbol}_scaler.save"
 
         if not os.path.exists(model_path) or not os.path.exists(scaler_path):
             raise FileNotFoundError("Model or Scaler not found for this symbol.")
@@ -173,8 +172,10 @@ def predict():
         predicted = model.predict(X_input)
         predicted_price = scaler.inverse_transform(predicted)[0][0]
 
+        forecast = [(datetime.today().strftime("%Y-%m-%d"), predicted_price)]
+
         return render_template("index.html", user=session['user'],
-                               prediction={"symbol": symbol, "price": round(predicted_price, 2)})
+                               forecast=forecast, symbol=symbol)
 
     except Exception as e:
         return render_template("index.html", user=session['user'],
