@@ -2,20 +2,12 @@ import os
 import sqlite3
 import numpy as np
 import pandas as pd
+import yfinance as yf
 import tensorflow as tf
 from flask import Flask, render_template, request, redirect, session, url_for
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
-from sklearn.preprocessing import MinMaxScaler
-from plotly.utils import PlotlyJSONEncoder
-import plotly.graph_objs as go
-import json
-from alpha_vantage.timeseries import TimeSeries
 import joblib
-
-# Load Alpha Vantage API key
-ALPHA_KEY = os.getenv("ALPHA_VANTAGE_KEY")
-ts = TimeSeries(key=ALPHA_KEY, output_format='pandas')
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key_here'
@@ -107,37 +99,58 @@ def analyze():
         return redirect(url_for('login'))
 
     symbol = request.form['analysis_symbol'].upper()
+    exchange = request.form['analysis_exchange']
+    suffix = 'NS' if exchange == 'NSE' else 'BO'
+    full_symbol = f"{symbol}.{suffix}"
+
     try:
-        data, _ = ts.get_daily_adjusted(symbol=symbol, outputsize='compact')
+        data = yf.download(full_symbol, period='5d', interval='1d')
         if data.empty:
             raise ValueError("No data found")
 
-        current_price = float(data.iloc[-1]['4. close'])
-        high_52w = data['2. high'].max()
-        low_52w = data['3. low'].min()
+        latest = data.iloc[-1]
+        info = yf.Ticker(full_symbol).info
 
         return render_template("index.html", user=session['user'],
-                               analysis={"symbol": symbol, "price": current_price,
-                                         "high": high_52w, "low": low_52w})
+                               analysis={
+                                   "symbol": full_symbol,
+                                   "price": latest['Close'],
+                                   "open": latest['Open'],
+                                   "previousClose": info.get("previousClose", "-"),
+                                   "dayHigh": latest['High'],
+                                   "dayLow": latest['Low'],
+                                   "volume": latest['Volume'],
+                                   "fiftyTwoWeekHigh": info.get("fiftyTwoWeekHigh", "-"),
+                                   "fiftyTwoWeekLow": info.get("fiftyTwoWeekLow", "-")
+                               })
     except Exception as e:
-        return render_template("index.html", user=session['user'], error=f"Failed to fetch stock info: {str(e)}")
+        return render_template("index.html", user=session['user'], analysis_error=f"Failed to fetch stock info: {str(e)}")
 
 # -------------------- STOCK SCREENER --------------------
-top_stocks = ['RELIANCE.BSE', 'TCS.BSE', 'INFY.BSE', 'ICICIBANK.BSE', 'HDFCBANK.BSE']
-
-@app.route('/screener', methods=['GET','POST'])
+@app.route('/screener', methods=['POST'])
 def screener():
     if 'user' not in session:
         return redirect(url_for('login'))
 
+    symbols = ['RELIANCE.NS', 'TCS.NS', 'INFY.NS', 'ICICIBANK.NS', 'HDFCBANK.NS']
     results = []
-    for symbol in top_stocks:
+
+    for sym in symbols:
         try:
-            quote, _ = ts.get_quote_endpoint(symbol=symbol)
-            price = float(quote['05. price'])
-            change = float(quote['10. change percent'].replace('%', ''))
-            results.append({"symbol": symbol, "price": price, "change": change})
-        except Exception:
+            data = yf.Ticker(sym).info
+            results.append({
+                "symbol": sym,
+                "price": data.get("currentPrice", 0),
+                "marketCap": data.get("marketCap", 0) // 10**7,
+                "volume": data.get("volume", 0),
+                "pe": data.get("trailingPE", 0),
+                "pb": data.get("priceToBook", 0),
+                "dividendYield": round((data.get("dividendYield", 0) or 0) * 100, 2),
+                "bookValue": data.get("bookValue", 0),
+                "high": data.get("fiftyTwoWeekHigh", 0),
+                "low": data.get("fiftyTwoWeekLow", 0)
+            })
+        except:
             continue
 
     return render_template("index.html", user=session['user'], screener_data=results)
@@ -149,6 +162,9 @@ def predict():
         return redirect(url_for('login'))
 
     symbol = request.form['predict_symbol'].upper()
+    exchange = request.form['exchange']
+    suffix = 'NS' if exchange == 'NSE' else 'BO'
+    full_symbol = f"{symbol}.{suffix}"
 
     try:
         model_path = f"models/{symbol}_model.h5"
@@ -160,13 +176,11 @@ def predict():
         model = tf.keras.models.load_model(model_path)
         scaler = joblib.load(scaler_path)
 
-        data, _ = ts.get_daily_adjusted(symbol=symbol, outputsize='compact')
-        df = data.sort_index()
-        close_prices = df['4. close'].values[-60:]
-
-        if len(close_prices) < 60:
+        data = yf.download(full_symbol, period='90d', interval='1d')
+        if data.empty or len(data) < 60:
             raise ValueError("Not enough data")
 
+        close_prices = data['Close'].values[-60:]
         scaled = scaler.transform(close_prices.reshape(-1, 1))
         X_input = np.array([scaled])
         predicted = model.predict(X_input)
@@ -174,12 +188,10 @@ def predict():
 
         forecast = [(datetime.today().strftime("%Y-%m-%d"), predicted_price)]
 
-        return render_template("index.html", user=session['user'],
-                               forecast=forecast, symbol=symbol)
+        return render_template("index.html", user=session['user'], forecast=forecast, symbol=full_symbol)
 
     except Exception as e:
-        return render_template("index.html", user=session['user'],
-                               error=f"No data to predict for {symbol}: {str(e)}")
+        return render_template("index.html", user=session['user'], error=f"No data to predict for {symbol}: {str(e)}")
 
 # -------------------- PORTFOLIO --------------------
 @app.route('/portfolio')
@@ -195,11 +207,17 @@ def portfolio():
 
     for sym in symbols:
         try:
-            data, _ = ts.get_daily_adjusted(symbol=sym, outputsize='compact')
-            current_price = float(data.iloc[-1]['4. close'])
-            high = data['2. high'].max()
-            low = data['3. low'].min()
-            stocks.append({"symbol": sym, "price": current_price, "high": high, "low": low})
+            data = yf.download(sym, period='5d')
+            if not data.empty:
+                latest = data.iloc[-1]
+                high = data['High'].max()
+                low = data['Low'].min()
+                stocks.append({
+                    "symbol": sym,
+                    "price": latest['Close'],
+                    "high": high,
+                    "low": low
+                })
         except:
             continue
 
