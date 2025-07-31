@@ -43,7 +43,7 @@ def get_db():
 def index():
     if 'user' in session:
         return render_template('index.html', user=session['user'])
-    return redirect(url_for('register'))
+    return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
