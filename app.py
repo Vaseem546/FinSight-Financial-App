@@ -50,6 +50,7 @@ def login():
     if request.method == 'POST':
         email = request.form['email']
         password = request.form['password']
+        print(f"Trying to login with: {email} / {password}")
 
         conn = get_db()
         user = conn.execute('SELECT * FROM users WHERE email = ? AND password = ?', (email, password)).fetchone()
@@ -57,11 +58,14 @@ def login():
 
         if user:
             session['user'] = email
+            print("Login successful")
             return redirect(url_for('index'))
         else:
+            print("Invalid credentials")
             return render_template('login_register.html', error="Invalid credentials", show_login=True)
 
     return render_template('login_register.html', show_login=True)
+
 
 @app.route('/register', methods=['POST'])
 def register():
