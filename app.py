@@ -1,14 +1,18 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 import sqlite3
 import os
+import json
 import yfinance as yf
 import numpy as np
 from datetime import datetime, timedelta
+from tensorflow.keras.models import load_model
 from keras.models import load_model
 import pickle
 from flask import send_from_directory
 from werkzeug.utils import secure_filename
+import plotly
 import plotly.graph_objs as go
+import joblib
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
@@ -23,10 +27,10 @@ def init_sqlite():
                     email TEXT UNIQUE NOT NULL,
                     password TEXT NOT NULL)''')
     c.execute('''CREATE TABLE IF NOT EXISTS portfolio (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    user_email TEXT NOT NULL,
-                    symbol TEXT NOT NULL,
-                    exchange TEXT)''')
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_email TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                exchange TEXT NOT NULL)''')
     conn.commit()
     conn.close()
 
@@ -45,42 +49,46 @@ def index():
         return render_template('index.html', user=session['user'])
     return redirect(url_for('login'))
 
+from werkzeug.security import check_password_hash
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         email = request.form['email']
         password = request.form['password']
-        print(f"Trying to login with: {email} / {password}")
 
         conn = get_db()
-        user = conn.execute('SELECT * FROM users WHERE email = ? AND password = ?', (email, password)).fetchone()
+        user = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
         conn.close()
 
-        if user:
+        if user and check_password_hash(user[2], password):
             session['user'] = email
-            print("Login successful")
             return redirect(url_for('index'))
         else:
-            print("Invalid credentials")
-            return render_template('login_register.html', error="Invalid credentials", show_login=True)
+            return render_template('login_register.html', error="Invalid credentials", show="login")
 
-    return render_template('login_register.html', show_login=True)
+    return render_template('login_register.html', show="login")
 
+
+
+from werkzeug.security import generate_password_hash
 
 @app.route('/register', methods=['POST'])
 def register():
     email = request.form['email']
     password = request.form['password']
 
+    hashed_password = generate_password_hash(password)
+
     try:
         conn = get_db()
-        conn.execute('INSERT INTO users (email, password) VALUES (?, ?)', (email, password))
+        conn.execute('INSERT INTO users (email, password) VALUES (?, ?)', (email, hashed_password))
         conn.commit()
         conn.close()
         session['user'] = email
         return redirect(url_for('index'))
     except sqlite3.IntegrityError:
-        return render_template('login_register.html', error="Email already registered", show_login=False)
+        return render_template('login_register.html', error="Email already registered", show="register")
 
 @app.route('/logout')
 def logout():
@@ -90,65 +98,131 @@ def logout():
 # ========== ANALYSIS ==========
 @app.route('/analyze', methods=['POST'])
 def analyze():
-    symbol = request.form['analysis_symbol'].upper()
-    exchange = request.form['analysis_exchange']
-    full_symbol = f"{symbol}.NS" if exchange == "NSE" else f"{symbol}.BO"
+    symbol = request.form.get('analysis_symbol', '').upper()
+    exchange = request.form.get('analysis_exchange')
 
     try:
-        data = yf.Ticker(full_symbol).history(period="7d", interval="1d")
-        info = yf.Ticker(full_symbol).info
+        if not symbol or not exchange:
+            raise Exception("Symbol or Exchange not provided")
 
-        if data.empty:
-            return render_template("index.html", analysis_error="No data found", scroll_to="analysis", user=session.get("user"))
+        full_symbol = symbol + '.NS' if exchange == 'NSE' else symbol + '.BO'
+        stock = yf.Ticker(full_symbol)
+        hist = stock.history(period="10d")
 
-        candlestick = go.Figure(data=[go.Candlestick(
-            x=data.index.strftime('%Y-%m-%d'),
-            open=data['Open'],
-            high=data['High'],
-            low=data['Low'],
-            close=data['Close']
-        )])
-        candlestick.update_layout(title=f"{symbol} Candlestick Chart", xaxis_title="Date", yaxis_title="Price")
+        if hist.empty:
+            raise Exception("No data found for the given stock symbol")
 
-        output = {
-            "symbol": symbol,
-            "price": round(info.get("currentPrice", 0), 2),
-            "open": round(info.get("open", 0), 2),
-            "previousClose": round(info.get("previousClose", 0), 2),
-            "dayHigh": round(info.get("dayHigh", 0), 2),
-            "dayLow": round(info.get("dayLow", 0), 2),
-            "volume": info.get("volume", 0),
-            "fiftyTwoWeekHigh": round(info.get("fiftyTwoWeekHigh", 0), 2),
-            "fiftyTwoWeekLow": round(info.get("fiftyTwoWeekLow", 0), 2),
-        }
+        hist.reset_index(inplace=True)
+        hist['Date'] = hist['Date'].dt.strftime('%Y-%m-%d')
 
-        return render_template("index.html", analysis=output, candlestick=candlestick.to_json(), scroll_to="analysis", user=session.get("user"))
+        candlestick_data = [go.Candlestick(
+            x=hist['Date'].tolist(),
+            open=hist['Open'].tolist(),
+            high=hist['High'].tolist(),
+            low=hist['Low'].tolist(),
+            close=hist['Close'].tolist()
+        )]
+
+        layout = go.Layout(
+            title=f'{symbol} Candlestick Chart',
+            plot_bgcolor='#111111',
+            paper_bgcolor='#111111',
+            font=dict(color='white'),
+            xaxis=dict(title='Date', color='white', showgrid=False),
+            yaxis=dict(title='Price', color='white', showgrid=False)
+        )
+
+        fig = go.Figure(data=candlestick_data, layout=layout)
+        candlestick_json = fig.to_plotly_json()
+
+        return render_template('index.html',
+            candlestick=candlestick_json,
+            analysis={
+                'symbol': symbol,
+                'price': round(float(hist['Close'].iloc[-1]), 2),
+                'open': round(float(hist['Open'].iloc[-1]), 2),
+                'previousClose': round(float(hist['Close'].iloc[-2]), 2) if len(hist) > 1 else round(float(hist['Close'].iloc[-1]), 2),
+                'dayHigh': round(float(hist['High'].iloc[-1]), 2),
+                'dayLow': round(float(hist['Low'].iloc[-1]), 2),
+                'volume': int(hist['Volume'].iloc[-1]),
+                'fiftyTwoWeekHigh': round(float(hist['High'].max()), 2),
+                'fiftyTwoWeekLow': round(float(hist['Low'].min()), 2)
+            },
+            analysis_symbol=symbol,
+            exchange=exchange
+        )
 
     except Exception as e:
-        return render_template("index.html", analysis_error=f"Failed to fetch stock info: {e}", scroll_to="analysis", user=session.get("user"))
+        return render_template('index.html', analysis_error=str(e))
 
 # ========== SCREENER ==========
+
+NIFTY_50_SYMBOLS = [
+    "RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "ICICIBANK.NS", "ADANIENT.NS",
+    "KOTAKBANK.NS", "SBIN.NS", "ITC.NS", "BHARTIARTL.NS", "LT.NS", "AXISBANK.NS",
+    "WIPRO.NS", "HCLTECH.NS", "SUNPHARMA.NS", "BAJFINANCE.NS", "MARUTI.NS", "HINDUNILVR.NS"
+]
+
 @app.route('/screener', methods=['POST'])
 def screener():
-    filters = {
-        'min_marketcap': request.form.get('min_marketcap'),
-        'min_volume': request.form.get('min_volume'),
-        'max_pe': request.form.get('max_pe'),
-        'max_pb': request.form.get('max_pb'),
-        'min_dividend': request.form.get('min_dividend'),
-        'min_bookvalue': request.form.get('min_bookvalue'),
-    }
-
     try:
-        # Placeholder: Replace with actual logic or API
-        results = [
-            {'symbol': 'RELIANCE', 'price': 2900, 'marketCap': 1800000, 'volume': 1200000, 'pe': 24.5, 'pb': 3.5, 'dividendYield': 1.2, 'bookValue': 650, 'high': 3200, 'low': 2600},
-            {'symbol': 'TCS', 'price': 3600, 'marketCap': 1500000, 'volume': 1000000, 'pe': 29.5, 'pb': 5.2, 'dividendYield': 1.5, 'bookValue': 720, 'high': 3900, 'low': 3100}
-        ]
-        return render_template("index.html", screener_data=results, scroll_to="screener", user=session.get("user"))
+        filters = {
+            'min_marketcap': float(request.form.get('min_marketcap') or 0),
+            'min_volume': float(request.form.get('min_volume') or 0),
+            'max_pe': float(request.form.get('max_pe') or float('inf')),
+            'max_pb': float(request.form.get('max_pb') or float('inf')),
+            'min_dividend': float(request.form.get('min_dividend') or 0),
+            'min_bookvalue': float(request.form.get('min_bookvalue') or 0),
+        }
+
+        filtered_stocks = []
+
+        for symbol in NIFTY_50_SYMBOLS:
+            try:
+                stock = yf.Ticker(symbol)
+                info = stock.info
+
+                data = {
+                    "symbol": symbol.replace(".NS", ""),
+                    "price": info.get("currentPrice"),
+                    "marketCap": (info.get("marketCap") or 0) / 1e7,  # to Cr
+                    "volume": info.get("volume") or 0,
+                    "pe": info.get("trailingPE") or float('inf'),
+                    "pb": info.get("priceToBook") or float('inf'),
+                    "dividendYield": (info.get("dividendYield") or 0) * 100,
+                    "bookValue": info.get("bookValue") or 0,
+                    "high": info.get("fiftyTwoWeekHigh"),
+                    "low": info.get("fiftyTwoWeekLow")
+                }
+
+                if (
+                    data["marketCap"] >= filters["min_marketcap"] and
+                    data["volume"] >= filters["min_volume"] and
+                    data["pe"] <= filters["max_pe"] and
+                    data["pb"] <= filters["max_pb"] and
+                    data["dividendYield"] >= filters["min_dividend"] and
+                    data["bookValue"] >= filters["min_bookvalue"]
+                ):
+                    filtered_stocks.append(data)
+
+            except Exception as stock_error:
+                print(f"Error fetching {symbol}: {stock_error}")
+                continue
+
+        return render_template(
+            "index.html",
+            screener_data=filtered_stocks,
+            scroll_to="screener",
+            user=session.get("user")
+        )
 
     except Exception as e:
-        return render_template("index.html", screener_error=f"Error: {e}", scroll_to="screener", user=session.get("user"))
+        return render_template(
+            "index.html",
+            screener_error=f"Error: {e}",
+            scroll_to="screener",
+            user=session.get("user")
+        )
 
 # ========== PREDICTION ==========
 @app.route('/predict', methods=['POST'])
@@ -165,11 +239,10 @@ def predict():
             return render_template("index.html", error=f"No data to predict for {symbol}: Model or Scaler not found for this symbol.", scroll_to="predictor", user=session.get("user"))
 
         model = load_model(model_path)
-        with open(scaler_path, 'rb') as f:
-            scaler = pickle.load(f)
+        scaler = joblib.load(scaler_path)  # ✅ FIXED HERE
 
-        df = yf.download(full_symbol, period="60d", interval="1d")
-        if df.empty or len(df) < 30:
+        df = yf.download(full_symbol, period="90d", interval="1d")
+        if df.empty or len(df) < 60:
             return render_template("index.html", error=f"No data to predict for {symbol}: Not enough data", scroll_to="predictor", user=session.get("user"))
 
         close_data = df['Close'].values.reshape(-1, 1)
@@ -179,7 +252,7 @@ def predict():
 
         predictions = []
         for _ in range(7):
-            pred = model.predict(x_input)[0][0]
+            pred = model.predict(x_input, verbose=0)[0][0]
             predictions.append(pred)
             x_input = np.append(x_input[:, 1:, :], [[[pred]]], axis=1)
 
@@ -190,32 +263,88 @@ def predict():
 
     except Exception as e:
         return render_template("index.html", error=f"Prediction failed: {e}", scroll_to="predictor", user=session.get("user"))
-
 # ========== PORTFOLIO ==========
 @app.route('/portfolio')
 def portfolio():
     if 'user' not in session:
         return redirect(url_for('login'))
 
-    conn = get_db()
-    stocks = conn.execute('SELECT symbol, exchange FROM portfolio WHERE user_email = ?', (session['user'],)).fetchall()
-    conn.close()
-    return render_template('portfolio.html', stocks=stocks)
+    user_email = session['user']
 
+    conn = sqlite3.connect('users.db')
+    c = conn.cursor()
+    c.execute("SELECT symbol, exchange FROM portfolio WHERE user_email = ?", (user_email,))
+    rows = c.fetchall()
+    conn.close()
+
+    stocks = []
+
+    for symbol, exchange in rows:
+        try:
+            full_symbol = f"{symbol}.NS" if exchange == "NSE" else f"{symbol}.BO"
+            data = yf.Ticker(full_symbol).info
+
+            # Ensure data contains expected keys
+            if 'currentPrice' not in data:
+                raise ValueError("Missing currentPrice in yfinance info")
+
+            stock_info = {
+                'symbol': symbol,
+                'exchange': exchange,
+                'current_price': round(data['currentPrice'], 2),
+                'fifty_two_week_high': round(data.get('fiftyTwoWeekHigh', 0), 2),
+                'fifty_two_week_low': round(data.get('fiftyTwoWeekLow', 0), 2)
+            }
+            stocks.append(stock_info)
+
+        except Exception as e:
+            print(f"⚠️ Failed to fetch stock info for {symbol}: {e}")
+            continue
+
+    return render_template('portfolio.html', stocks=stocks, user=user_email)
+
+# --- Add to Portfolio ---
 @app.route('/add_to_portfolio', methods=['POST'])
 def add_to_portfolio():
     if 'user' not in session:
         return redirect(url_for('login'))
 
-    symbol = request.form['symbol']
-    exchange = 'NSE'
+    symbol = request.form.get('symbol')
+    exchange = request.form.get('exchange')
+    user_email = session['user']
+
+    print(f"📥 Received: {symbol}  {user_email} | Exchange: {exchange}")
+
+    # Skip if any field is missing
+    if not symbol or not exchange or not user_email:
+        print("⚠️ Missing data - insertion skipped")
+        return redirect(url_for('portfolio'))
 
     conn = get_db()
-    conn.execute('INSERT INTO portfolio (user_email, symbol, exchange) VALUES (?, ?, ?)', (session['user'], symbol, exchange))
+    conn.execute('INSERT INTO portfolio (user_email, symbol, exchange) VALUES (?, ?, ?)', 
+                 (user_email, symbol, exchange))
     conn.commit()
     conn.close()
 
-    return redirect(url_for('index', scroll_to='analysis'))
+    return redirect(url_for('portfolio'))
+
+# --- Remove from Portfolio ---
+@app.route('/remove_from_portfolio', methods=['POST'])
+def remove_from_portfolio():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+
+    symbol = request.form.get('symbol')
+    email = session['user']
+
+    conn = get_db()
+    cursor = conn.cursor()
+    cursor.execute('DELETE FROM portfolio WHERE user_email = ? AND symbol = ?', (email, symbol))
+    conn.commit()
+    conn.close()
+
+    return redirect(url_for('portfolio'))
+
 
 # ========== MAIN ==========
 if __name__ == '__main__':

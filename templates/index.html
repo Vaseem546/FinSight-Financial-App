@@ -51,20 +51,24 @@
     <button type="submit">Analyze</button>
   </form>
   {% if candlestick %}
-  <div id="candlestick-chart" style="margin-top: 30px;"></div>
-  <script>
-    try {
-      const chartData = {{ candlestick | safe  }};
-      if (chartData.data && chartData.data.length > 0) {
-        Plotly.newPlot("candlestick-chart", chartData.data, chartData.layout);
-      } else {
-        document.getElementById("candlestick-chart").innerHTML = "<p style='color:#ff6b6b;'>No chart data available.</p>";
-      }
-    }catch (e) {
-      document.getElementById("candlestick-chart").innerHTML = "<p style='color:#ff6b6b;'>Chart rendering failed.</p>";
+<div id="candlestick-chart" style="margin-top: 30px;"></div>
+<script>
+  try {
+    const chartData = {{ candlestick | tojson | safe }};
+    if (chartData.data && chartData.data.length > 0) {
+      Plotly.newPlot("candlestick-chart", chartData.data, chartData.layout);
+    } else {
+      document.getElementById("candlestick-chart").innerHTML = "<p style='color:#ff6b6b;'>No chart data available.</p>";
     }
-  </script>
+  } catch (e) {
+    document.getElementById("candlestick-chart").innerHTML = "<p style='color:#ff6b6b;'>Chart rendering failed.</p>";
+    console.error(e);
+  }
+</script>
 {% endif %}
+
+
+
 
 
  
@@ -83,10 +87,16 @@
       <div class="output-box">52W Low: ₹{{ analysis.fiftyTwoWeekLow }}</div>
     </div>
 
-   <form method="POST" action="{{ url_for('add_to_portfolio') }}" style="margin-top: 15px;">
-    <input type="hidden" name="symbol" value="{{ analysis.symbol }}">
-    <button type="submit" class="save-btn">+ Save to Portfolio</button>
+ {% if analysis_symbol %}
+  <form method="POST" action="{{ url_for('add_to_portfolio') }}">
+    <input type="hidden" name="symbol" value="{{ analysis_symbol }}">
+    <input type="hidden" name="exchange" value="NSE">  <!-- Or make this dynamic -->
+    <button type="submit">Save to Portfolio</button>
   </form>
+{% endif %}
+
+
+
  {% endif %}
 </section>
 
@@ -176,6 +186,16 @@
 <footer>
   <p>&copy; 2025 FinSight. All rights reserved.</p>
 </footer>
+{% if candlestick or analysis_error %}
+<script>
+  window.onload = () => {
+    const section = document.getElementById("analysis");
+    if (section) {
+      section.scrollIntoView({ behavior: "smooth" });
+    }
+  };
+</script>
+{% endif %}
 
 <!-- Smooth Scroll on Load -->
 <script>

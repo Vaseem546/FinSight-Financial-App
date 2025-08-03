@@ -29,24 +29,27 @@
 
 <!-- PORTFOLIO SECTION -->
 <section class="section" id="portfolio">
-  <h2>My Portfolio</h2>
+ <h2>My Portfolio</h2>
+{% if stocks %}
+  <div class="portfolio-grid">
+    {% for stock in stocks %}
+      <div class="portfolio-box">
+        <h4>{{ stock.symbol }} </h4>
+        <p>Price: ₹{{ stock.current_price }}</p>
+        <p>52W High: ₹{{ stock.fifty_two_week_high }}</p>
+        <p>52W Low: ₹{{ stock.fifty_two_week_low }}</p>
 
-  {% if stocks %}
-    <div class="output">
-      {% for stock in stocks %}
-        <div class="output-box">
-          <strong>{{ stock.symbol }}</strong> — ₹{{ stock.price }}<br>
-          52W High: ₹{{ stock.high }} | 52W Low: ₹{{ stock.low }}
-          <form method="POST" action="{{ url_for('remove_from_portfolio') }}" style="margin-top: 10px;">
-            <input type="hidden" name="symbol" value="{{ stock.symbol }}">
-            <button type="submit" class="remove-btn">Remove</button>
-          </form>
-        </div>
-      {% endfor %}
-    </div>
-  {% else %}
-    <p class="error">Your portfolio is empty.</p>
-  {% endif %}
+        <form action="{{ url_for('remove_from_portfolio') }}" method="POST">
+          <input type="hidden" name="symbol" value="{{ stock.symbol }}">
+          <button type="submit" class="remove-btn">Remove</button>
+        </form>
+      </div>
+    {% endfor %}
+  </div>
+{% else %}
+  <p>No stocks in your portfolio yet.</p>
+{% endif %}
+
 </section>
 
 <footer>

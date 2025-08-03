@@ -438,6 +438,54 @@ button:hover {
   transform: scale(1.1);
   box-shadow: 0 6px 15px rgba(0, 255, 204, 0.6);
 }
+.portfolio-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.5rem;
+  padding: 1rem 0;
+}
+
+.portfolio-box {
+  background: #1c1c1c;
+  border-radius: 12px;
+  padding: 1rem;
+  color: #fff;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  transition: transform 0.2s ease;
+}
+
+.portfolio-box:hover {
+  transform: translateY(-5px);
+}
+
+.portfolio-box h4 {
+  margin-top: 0;
+  margin-bottom: 0.5rem;
+  font-size: 1.1rem;
+  color: #00e0ff;
+}
+
+.portfolio-box p {
+  margin: 0.3rem 0;
+  font-size: 0.95rem;
+}
+
+.remove-btn {
+  margin-top: 0.5rem;
+  background-color: #ff3b3b;
+  color: #fff;
+  border: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(255, 59, 59, 0.5);
+  transition: background 0.2s ease;
+}
+
+.remove-btn:hover {
+  background-color: #e62020;
+}
+
 
 
 /* FOOTER */
