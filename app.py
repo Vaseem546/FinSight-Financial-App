@@ -13,6 +13,7 @@ from werkzeug.utils import secure_filename
 import plotly
 import plotly.graph_objs as go
 import joblib
+from functools import lru_cache
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
@@ -95,6 +96,20 @@ def logout():
     session.pop('user', None)
     return redirect(url_for('login'))
 
+
+
+@lru_cache(maxsize=100)
+def fetch_stock_history(full_symbol):
+    print(f"[CACHE] Fetching data for {full_symbol}")
+    try:
+        stock = yf.Ticker(full_symbol)
+        hist = stock.history(period="10d")
+        if hist.empty:
+            raise Exception("No data returned from yfinance")
+        return hist
+    except Exception as e:
+        print(f"[ERROR] yfinance failed for {full_symbol}: {e}")
+        return None
 # ========== ANALYSIS ==========
 @app.route('/analyze', methods=['POST'])
 def analyze():
@@ -106,11 +121,10 @@ def analyze():
             raise Exception("Symbol or Exchange not provided")
 
         full_symbol = symbol + '.NS' if exchange == 'NSE' else symbol + '.BO'
-        stock = yf.Ticker(full_symbol)
-        hist = stock.history(period="10d")
 
-        if hist.empty:
-            raise Exception("No data found for the given stock symbol")
+        hist = fetch_stock_history(full_symbol)
+        if hist is None:
+            raise Exception("Stock data could not be fetched (API may be rate-limited).")
 
         hist.reset_index(inplace=True)
         hist['Date'] = hist['Date'].dt.strftime('%Y-%m-%d')
@@ -154,6 +168,10 @@ def analyze():
 
     except Exception as e:
         return render_template('index.html', analysis_error=str(e))
+
+
+
+
 
 # ========== SCREENER ==========
 
