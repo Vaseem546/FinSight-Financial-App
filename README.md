@@ -28,21 +28,26 @@ FinSight is a full-stack financial web application designed to deliver premium t
 - **Deployment**: Render (or any preferred platform)
 
 ## Project Structure
-
+```bash
 FinSightFinancialApp/
-│
+├── app.py                        # Main Flask application
+├── train_models.py              # LSTM model training script
+├── requirements.txt             # Python dependencies
+├── .env                         # Environment variables (API keys, DB URIs)
 ├── static/
-│   └── style.css
+│   ├── style.css                # Custom global styles
+│   └── login_background.jpg     # Background image for auth pages
 ├── templates/
-│   ├── index.html
-│   ├── login_register.html
+│   ├── index.html               # Main dashboard UI (after login)
+│   ├── login_register.html     # Combined login/register interface
+│   └── base.html                # Common layout (optional)
 ├── models/
-│   └── trained LSTM models
-├── app.py
-├── train_models.py
-├── requirements.txt
-└── README.md
-
+│   ├── TCS_model.h5             # Example pre-trained LSTM model
+│   └── ...                      # Other NIFTY50 stock models
+├── utils/
+│   └── helper_functions.py      # Data preprocessing, model loading, etc.
+├── .gitignore                   # Ignore models, __pycache__, .env, etc.
+└── README.md                    # Project overview and instructions
 
 ## Getting Started
 
@@ -54,3 +59,4 @@ FinSightFinancialApp/
 2.Install Dependencies 
 ```bash
 pip install -r requirements.txt
+
