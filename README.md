@@ -49,6 +49,7 @@ FinSightFinancialApp/
 ├── .gitignore                   # Ignore models, __pycache__, .env, etc.
 └── README.md                    # Project overview and instructions
 
+
 ## Getting Started
 
 1. Clone the repository:
@@ -56,7 +57,18 @@ FinSightFinancialApp/
    git clone https://github.com/your-username/FinSightFinancialApp.git
    cd FinSightFinancialApp
 
-2.Install Dependencies 
-```bash
+2. Install dependencies:
+
 pip install -r requirements.txt
+
+
+3. Set up environment variables in a .env file:
+
+OPENAI_API_KEY=your_openai_api_key
+
+
+4. Run the Flask server:
+
+python app.py
+
 
