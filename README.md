@@ -80,3 +80,4 @@ Real-time stock news and sentiment analysis
 User portfolio saving and tracking
 
 PWA (Progressive Web App) support
+
