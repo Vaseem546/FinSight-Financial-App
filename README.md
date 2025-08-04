@@ -1,85 +1,56 @@
-FinSight Financial App
+# FinSight Financial App
 
-FinSight is a full-stack financial web application designed to empower users with tools for analyzing, screening, and predicting stock market behavior. It combines modern UI design with backend intelligence using Flask, MongoDB, and deep learning models.
+FinSight is a full-stack financial web application designed to deliver premium tools for retail investors. It combines real-time stock analysis, intelligent stock predictions, and a visually elegant UI inspired by modern fintech platforms like TradingView and Groww.
 
-Features
+## Features
 
-User Authentication
-Secure login and register functionality with session management.
+- **User Authentication**  
+  Secure login and registration using Flask and MongoDB.
 
-Stock Market Analysis
-Input stock symbols to retrieve historical performance and market trends.
+- **Stock Market Analysis**  
+  Get live stock data, company overviews, and charts.
 
-Stock Screener
-Filter and search stocks based on customized financial criteria.
+- **LSTM-Based Stock Price Prediction**  
+  Predict future prices using pre-trained LSTM models for Nifty 50 stocks.
 
-Stock Price Prediction
-LSTM-based model trained on Indian stock data for price forecasting.
+- **Stock Screener**  
+  Filter and find high-potential stocks based on financial metrics.
 
-Responsive UI
-Designed with handcrafted frontend inspired by platforms like Groww and TradingView.
+- **Responsive UI Design**  
+  Mobile-first and handcrafted with a premium aesthetic — smooth scroll, glassmorphism, and dark-themed UI.
 
-Smooth Scrolling & Section Navigation
-One-page navigation with smooth user transitions across sections.
+## Tech Stack
 
+- **Frontend**: HTML, CSS, JavaScript  
+- **Backend**: Flask (Python)  
+- **Database**: MongoDB  
+- **ML Models**: TensorFlow, yFinance (for training)  
+- **Deployment**: Render (or any preferred platform)
 
-Tech Stack
+## Project Structure
 
-Frontend: HTML, CSS (with Glassmorphism and Gradient Design), JavaScript
-
-Backend: Python (Flask)
-
-Database: SQLlite
-
-Machine Learning: TensorFlow, yFinance, NumPy, Scikit-learn
-
-Hosting: Render
-
-
-Project Highlights
-
-Modular codebase with separated templates and routes
-
-Trained and saved LSTM models for efficient real-time predictions
-
-Search auto-suggestions for symbols (planned enhancement)
-
-Section-based dashboard with clear user flows and mobile responsiveness
+FinSightFinancialApp/
+│
+├── static/
+│   └── style.css
+├── templates/
+│   ├── index.html
+│   ├── login_register.html
+├── models/
+│   └── trained LSTM models
+├── app.py
+├── train_models.py
+├── requirements.txt
+└── README.md
 
 
-Setup Instructions
+## Getting Started
 
 1. Clone the repository:
+   ```bash
+   git clone https://github.com/your-username/FinSightFinancialApp.git
+   cd FinSightFinancialApp
 
-git clone https://github.com/yourusername/FinSightFinancialApp.git
-cd FinSightFinancialApp
-
-
-2. Install dependencies:
-
+2.Install Dependencies 
+```bash
 pip install -r requirements.txt
-
-
-3. Set up environment variables: Create a .env file and add your keys (MongoDB URI, API keys, etc.)
-
-
-4. Run the application:
-
-python app.py
-
-
-
-Future Enhancements
-
-Candlestick chart integration using Plotly or TradingView widget
-
-More advanced screening filters
-
-Real-time stock news and sentiment analysis
-
-User portfolio saving and tracking
-
-PWA (Progressive Web App) support
-
-
-
