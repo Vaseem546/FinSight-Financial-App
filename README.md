@@ -1,5 +1,5 @@
 FinSight Financial App
-FinSight Fianacial App
+
 FinSight is a full-stack financial web application designed to empower users with tools for analyzing, screening, and predicting stock market behavior. It combines modern UI design with backend intelligence using Flask, MongoDB, and deep learning models.
 
 Features
@@ -80,5 +80,6 @@ Real-time stock news and sentiment analysis
 User portfolio saving and tracking
 
 PWA (Progressive Web App) support
+
 
 
