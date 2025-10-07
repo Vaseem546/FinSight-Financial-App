@@ -5,7 +5,7 @@ FinSight is a full-stack financial web application designed to deliver premium t
 ## Features
 
 - **User Authentication**  
-  Secure login and registration using Flask and MongoDB.
+  Secure login and registration using Flask and MySQL.
 
 - **Stock Market Analysis**  
   Get live stock data, company overviews, and charts.
@@ -23,9 +23,9 @@ FinSight is a full-stack financial web application designed to deliver premium t
 
 - **Frontend**: HTML, CSS, JavaScript  
 - **Backend**: Flask (Python)  
-- **Database**: MongoDB  
+- **Database**: MySQL  
 - **ML Models**: TensorFlow, yFinance (for training)  
-- **Deployment**: Render (or any preferred platform)
+- **Deployment**: Render
 
 ## Project Structure
 ```bash
@@ -70,5 +70,6 @@ OPENAI_API_KEY=your_openai_api_key
 4. Run the Flask server:
 
 python app.py
+
 
 
