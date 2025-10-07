@@ -50,7 +50,7 @@ def index():
         return render_template('index.html', user=session['user'])
     return redirect(url_for('login'))
 
-from werkzeug.security import check_password_hash
+
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -72,7 +72,7 @@ def login():
 
 
 
-from werkzeug.security import generate_password_hash
+
 
 @app.route('/register', methods=['POST'])
 def register():
