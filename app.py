@@ -1,5 +1,9 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
-import sqlite3
+# --- NEW IMPORTS FOR MYSQL AND ENV ---
+from dotenv import load_dotenv # Used to load the .env file
+import pymysql.cursors       # The MySQL driver
+from werkzeug.security import generate_password_hash, check_password_hash 
+# -------------------------------------
 import os
 import json
 import yfinance as yf
@@ -14,33 +18,41 @@ import plotly
 import plotly.graph_objs as go
 import joblib
 from functools import lru_cache
+# --- END IMPORTS ---
+
+
+load_dotenv() # Load environment variables from .env
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
 app.config['UPLOAD_FOLDER'] = 'models'
 
-# ========== DATABASE SETUP ==========
-def init_sqlite():
-    conn = sqlite3.connect('users.db')
-    c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS users (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    email TEXT UNIQUE NOT NULL,
-                    password TEXT NOT NULL)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS portfolio (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_email TEXT NOT NULL,
-                symbol TEXT NOT NULL,
-                exchange TEXT NOT NULL)''')
-    conn.commit()
-    conn.close()
+# ========== DATABASE SETUP (MYSQL) ==========
 
-init_sqlite()
+# Configuration pulled from .env
+DB_CONFIG = {
+    'host': os.environ.get('MYSQL_HOST'),
+    'port': int(os.environ.get('MYSQL_PORT', 3306)),
+    'user': os.environ.get('MYSQL_USER'),
+    'password': os.environ.get('MYSQL_PASSWORD'),
+    'db': os.environ.get('MYSQL_DB'),
+    'cursorclass': pymysql.cursors.DictCursor # Returns rows as dictionaries (like SQLite's Row factory)
+}
 
 def get_db():
-    conn = sqlite3.connect('users.db')
-    conn.row_factory = sqlite3.Row
-    return conn
+    """Establishes a connection to the MySQL database."""
+    try:
+        return pymysql.connect(**DB_CONFIG)
+    except Exception as e:
+        print(f"Database connection failed: {e}")
+        # In a real app, you'd log and handle this gracefully
+        raise
+
+# === Utility function to swap SQLite '?' placeholders with MySQL '%s' ===
+def convert_query(sql):
+    return sql.replace('?', '%s')
+
+
 
 # ========== ROUTES ==========
 
@@ -51,7 +63,6 @@ def index():
     return redirect(url_for('login'))
 
 
-
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
@@ -59,19 +70,20 @@ def login():
         password = request.form['password']
 
         conn = get_db()
-        user = conn.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+        with conn.cursor() as cursor:
+          
+            cursor.execute(convert_query('SELECT * FROM users WHERE email = ?'), (email,))
+            user = cursor.fetchone()
         conn.close()
 
-        if user and check_password_hash(user[2], password):
+        # Check password using dictionary key from DictCursor
+        if user and check_password_hash(user['password'], password):
             session['user'] = email
             return redirect(url_for('index'))
         else:
             return render_template('login_register.html', error="Invalid credentials", show="login")
 
     return render_template('login_register.html', show="login")
-
-
-
 
 
 @app.route('/register', methods=['POST'])
@@ -83,19 +95,21 @@ def register():
 
     try:
         conn = get_db()
-        conn.execute('INSERT INTO users (email, password) VALUES (?, ?)', (email, hashed_password))
+        with conn.cursor() as cursor:
+           
+            cursor.execute(convert_query('INSERT INTO users (email, password) VALUES (?, ?)'), (email, hashed_password))
         conn.commit()
         conn.close()
         session['user'] = email
         return redirect(url_for('index'))
-    except sqlite3.IntegrityError:
+    # Use the specific PyMySQL exception for integrity errors (e.g., duplicate email)
+    except pymysql.err.IntegrityError: 
         return render_template('login_register.html', error="Email already registered", show="register")
 
 @app.route('/logout')
 def logout():
     session.pop('user', None)
     return redirect(url_for('login'))
-
 
 
 @lru_cache(maxsize=100)
@@ -168,9 +182,6 @@ def analyze():
 
     except Exception as e:
         return render_template('index.html', analysis_error=str(e))
-
-
-
 
 
 # ========== SCREENER ==========
@@ -289,16 +300,21 @@ def portfolio():
 
     user_email = session['user']
 
-    conn = sqlite3.connect('users.db')
-    c = conn.cursor()
-    c.execute("SELECT symbol, exchange FROM portfolio WHERE user_email = ?", (user_email,))
-    rows = c.fetchall()
+    conn = get_db()
+    with conn.cursor() as cursor:
+        # SQL Query updated for MySQL placeholder
+        cursor.execute(convert_query("SELECT symbol, exchange FROM portfolio WHERE user_email = ?"), (user_email,))
+        rows = cursor.fetchall()
     conn.close()
 
     stocks = []
 
-    for symbol, exchange in rows:
+    # Iterate through the rows (which are dictionaries due to DictCursor)
+    for row in rows:
         try:
+            symbol = row['symbol']
+            exchange = row['exchange']
+            
             full_symbol = f"{symbol}.NS" if exchange == "NSE" else f"{symbol}.BO"
             data = yf.Ticker(full_symbol).info
 
@@ -339,8 +355,10 @@ def add_to_portfolio():
         return redirect(url_for('portfolio'))
 
     conn = get_db()
-    conn.execute('INSERT INTO portfolio (user_email, symbol, exchange) VALUES (?, ?, ?)', 
-                 (user_email, symbol, exchange))
+    with conn.cursor() as cursor:
+        # SQL Query updated for MySQL placeholder
+        cursor.execute(convert_query('INSERT INTO portfolio (user_email, symbol, exchange) VALUES (?, ?, ?)'), 
+                     (user_email, symbol, exchange))
     conn.commit()
     conn.close()
 
@@ -356,8 +374,9 @@ def remove_from_portfolio():
     email = session['user']
 
     conn = get_db()
-    cursor = conn.cursor()
-    cursor.execute('DELETE FROM portfolio WHERE user_email = ? AND symbol = ?', (email, symbol))
+    with conn.cursor() as cursor:
+        # SQL Query updated for MySQL placeholder
+        cursor.execute(convert_query('DELETE FROM portfolio WHERE user_email = ? AND symbol = ?'), (email, symbol))
     conn.commit()
     conn.close()
 

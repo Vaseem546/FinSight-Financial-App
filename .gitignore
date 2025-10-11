@@ -25,3 +25,7 @@ Thumbs.db
 # Cache and temp files
 *.cache
 *.tmp
+
+
+#Stop tracking env file for security
+*.env 
