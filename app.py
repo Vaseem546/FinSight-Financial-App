@@ -1,19 +1,13 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
-# --- NEW IMPORTS FOR MYSQL AND ENV ---
 from dotenv import load_dotenv # Used to load the .env file
-import pymysql.cursors       # The MySQL driver
+import pymysql.cursors       
 from werkzeug.security import generate_password_hash, check_password_hash 
-# -------------------------------------
 import os
 import json
 import yfinance as yf
 import numpy as np
 from datetime import datetime, timedelta
 from tensorflow.keras.models import load_model
-from keras.models import load_model
-import pickle
-from flask import send_from_directory
-from werkzeug.utils import secure_filename
 import plotly
 import plotly.graph_objs as go
 import joblib
