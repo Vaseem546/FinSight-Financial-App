@@ -1,7 +1,6 @@
-Got it! I’ve rewritten your README to make it **professional, clean, and well-formatted**, keeping all your content, database configuration, and usage instructions intact:
 
 ````markdown
-# FinSight Financial App
+## FinSight Financial App
 
 FinSight is a full-stack financial web application that empowers retail investors with advanced tools for **real-time stock analysis**, **LSTM-based predictions**, and a sleek, responsive UI inspired by modern fintech platforms like TradingView and Groww.
 
@@ -191,3 +190,4 @@ I can also make a **slightly shorter “cleaner” version** for GitHub that avo
 
 Do you want me to make that concise version too?
 ```
+
