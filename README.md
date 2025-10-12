@@ -152,6 +152,4 @@ MIT License © 2025 FinSight Team
 
 ---
 
-If you want, I can also **add a live demo badge, screenshots, and a “Preview” GIF section** to make this README fully GitHub-professional and eye-catching.
 
-Do you want me to do that next?
