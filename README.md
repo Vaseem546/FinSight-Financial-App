@@ -1,4 +1,4 @@
-FinSight Financial App
+##FinSight Financial App
 
 
 FinSight is a full-stack financial web application providing retail investors with advanced tools for real-time stock analysis, LSTM-based predictions, and an elegant, responsive UI inspired by modern fintech platforms like TradingView and Groww.
@@ -124,6 +124,50 @@ python app.py
 
 ---
 
+```markdown
+## Database Configuration
+
+This app uses **MySQL** as its database. Credentials are stored in a `.env` file for security.
+
+### `.env` Example
+
+```
+
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=your_mysql_user
+DB_PASSWORD=your_mysql_password
+DB_NAME=finsight_db
+
+````
+
+> Make sure `.env` is **not committed** to GitHub.  
+
+### Connecting in the App
+
+The app reads credentials using `python-dotenv`:
+
+```python
+from dotenv import load_dotenv
+import os
+import mysql.connector
+
+load_dotenv()
+
+conn = mysql.connector.connect(
+    host=os.getenv("DB_HOST"),
+    port=int(os.getenv("DB_PORT")),
+    user=os.getenv("DB_USER"),
+    password=os.getenv("DB_PASSWORD"),
+    database=os.getenv("DB_NAME")
+)
+````
+
+> Ensure the MySQL database (`DB_NAME`) exists before running the app.
+
+```
+
+
 ## Optional: Train Models
 
 ```bash
@@ -149,6 +193,7 @@ Use this script to train or update LSTM models for Nifty 50 stocks.
 MIT License © 2025 FinSight Team
 
 ---
+
 
 
 
