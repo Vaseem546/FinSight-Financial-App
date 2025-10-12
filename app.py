@@ -244,37 +244,68 @@ def predict():
     full_symbol = f"{symbol}.NS" if exchange == "NSE" else f"{symbol}.BO"
 
     try:
+        # Paths to model and scaler
         model_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{symbol}_model.h5")
         scaler_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{symbol}_scaler.save")
 
+        # Check if model and scaler exist
         if not os.path.exists(model_path) or not os.path.exists(scaler_path):
-            return render_template("index.html", error=f"No data to predict for {symbol}: Model or Scaler not found for this symbol.", scroll_to="predictor", user=session.get("user"))
+            return render_template(
+                "index.html",
+                error=f"No data to predict for {symbol}: Model or Scaler not found.",
+                scroll_to="predictor",
+                user=session.get("user")
+            )
 
-        model = load_model(model_path)
-        scaler = joblib.load(scaler_path)  # ✅ FIXED HERE
+        # Load model safely and scaler
+        model = load_model(model_path, compile=False)  # ⚡ Fix InputLayer deserialization
+        scaler = joblib.load(scaler_path)
 
+        # Fetch recent stock data
         df = yf.download(full_symbol, period="90d", interval="1d")
         if df.empty or len(df) < 60:
-            return render_template("index.html", error=f"No data to predict for {symbol}: Not enough data", scroll_to="predictor", user=session.get("user"))
+            return render_template(
+                "index.html",
+                error=f"No data to predict for {symbol}: Not enough data.",
+                scroll_to="predictor",
+                user=session.get("user")
+            )
 
+        # Prepare input for LSTM
         close_data = df['Close'].values.reshape(-1, 1)
         scaled_data = scaler.transform(close_data)
         last_60 = scaled_data[-60:]
         x_input = last_60.reshape(1, 60, 1)
 
+        # Generate predictions for next 7 days
         predictions = []
         for _ in range(7):
             pred = model.predict(x_input, verbose=0)[0][0]
             predictions.append(pred)
             x_input = np.append(x_input[:, 1:, :], [[[pred]]], axis=1)
 
+        # Inverse transform predictions
         forecast = scaler.inverse_transform(np.array(predictions).reshape(-1, 1)).flatten()
-        future_dates = [(datetime.now() + timedelta(days=i + 1)).strftime('%Y-%m-%d') for i in range(7)]
+        future_dates = [
+            (datetime.now() + timedelta(days=i + 1)).strftime('%Y-%m-%d') for i in range(7)
+        ]
 
-        return render_template("index.html", forecast=zip(future_dates, forecast), symbol=symbol, scroll_to="predictor", user=session.get("user"))
+        return render_template(
+            "index.html",
+            forecast=zip(future_dates, forecast),
+            symbol=symbol,
+            scroll_to="predictor",
+            user=session.get("user")
+        )
 
     except Exception as e:
-        return render_template("index.html", error=f"Prediction failed: {e}", scroll_to="predictor", user=session.get("user"))
+        return render_template(
+            "index.html",
+            error=f"Prediction failed: {e}",
+            scroll_to="predictor",
+            user=session.get("user")
+        )
+
 # ========== PORTFOLIO ==========
 @app.route('/portfolio')
 def portfolio():
