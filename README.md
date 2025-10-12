@@ -182,12 +182,3 @@ Use this script to train or update LSTM models for Nifty 50 stocks.
 MIT License © 2025 FinSight Team
 
 ```
-
-✅ This version is **professional, structured, and clean**, with a dedicated **Database Configuration** section showing `.env` usage and MySQL connection.  
-
-I can also make a **slightly shorter “cleaner” version** for GitHub that avoids repeating too much if you want it more concise.  
-
-Do you want me to make that concise version too?
-```
-
-
