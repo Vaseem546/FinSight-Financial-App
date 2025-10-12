@@ -30,7 +30,7 @@ DB_CONFIG = {
     'user': os.environ.get('MYSQL_USER'),
     'password': os.environ.get('MYSQL_PASSWORD'),
     'db': os.environ.get('MYSQL_DB'),
-    'cursorclass': pymysql.cursors.DictCursor # Returns rows as dictionaries (like SQLite's Row factory)
+    'cursorclass': pymysql.cursors.DictCursor 
 }
 
 def get_db():
@@ -39,14 +39,7 @@ def get_db():
         return pymysql.connect(**DB_CONFIG)
     except Exception as e:
         print(f"Database connection failed: {e}")
-        # In a real app, you'd log and handle this gracefully
         raise
-
-# === Utility function to swap SQLite '?' placeholders with MySQL '%s' ===
-def convert_query(sql):
-    return sql.replace('?', '%s')
-
-
 
 # ========== ROUTES ==========
 
@@ -56,21 +49,18 @@ def index():
         return render_template('index.html', user=session['user'])
     return redirect(url_for('login'))
 
-
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         email = request.form['email']
         password = request.form['password']
-
         conn = get_db()
         with conn.cursor() as cursor:
-          
-            cursor.execute(convert_query('SELECT * FROM users WHERE email = ?'), (email,))
+            cursor.execute('SELECT * FROM users WHERE email = %s', (email,))
             user = cursor.fetchone()
         conn.close()
 
-        # Check password using dictionary key from DictCursor
+        # ✅ Verify password securely
         if user and check_password_hash(user['password'], password):
             session['user'] = email
             return redirect(url_for('index'))
@@ -90,21 +80,19 @@ def register():
     try:
         conn = get_db()
         with conn.cursor() as cursor:
-           
-            cursor.execute(convert_query('INSERT INTO users (email, password) VALUES (?, ?)'), (email, hashed_password))
+            cursor.execute('INSERT INTO users (email, password) VALUES (%s, %s)', (email, hashed_password))
         conn.commit()
         conn.close()
         session['user'] = email
         return redirect(url_for('index'))
-    # Use the specific PyMySQL exception for integrity errors (e.g., duplicate email)
-    except pymysql.err.IntegrityError: 
+
+    except pymysql.err.IntegrityError:
         return render_template('login_register.html', error="Email already registered", show="register")
 
 @app.route('/logout')
 def logout():
     session.pop('user', None)
     return redirect(url_for('login'))
-
 
 @lru_cache(maxsize=100)
 def fetch_stock_history(full_symbol):
