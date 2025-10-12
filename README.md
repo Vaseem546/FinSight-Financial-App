@@ -1,6 +1,4 @@
-
-
-# ![FinSight]FinSight Financial App
+FinSight Financial App
 
 
 FinSight is a full-stack financial web application providing retail investors with advanced tools for real-time stock analysis, LSTM-based predictions, and an elegant, responsive UI inspired by modern fintech platforms like TradingView and Groww.
@@ -151,5 +149,6 @@ Use this script to train or update LSTM models for Nifty 50 stocks.
 MIT License © 2025 FinSight Team
 
 ---
+
 
 
