@@ -101,7 +101,6 @@ pip install -r requirements.txt
 4. **Set up environment variables in a `.env` file:**
 
 ```env
-OPENAI_API_KEY=your_openai_api_key
 DB_HOST=localhost
 DB_PORT=3306
 DB_USER=your_mysql_user
@@ -182,3 +181,4 @@ Use this script to train or update LSTM models for Nifty 50 stocks.
 MIT License © 2025 FinSight Team
 
 ```
+
