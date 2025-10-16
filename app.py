@@ -346,7 +346,7 @@ def portfolio():
             stocks.append(stock_info)
 
         except Exception as e:
-            print(f"⚠️ Failed to fetch stock info for {symbol}: {e}")
+            print(f"Failed to fetch stock info for {symbol}: {e}")
             continue
 
     return render_template('portfolio.html', stocks=stocks, user=user_email)
@@ -361,11 +361,11 @@ def add_to_portfolio():
     exchange = request.form.get('exchange')
     user_email = session['user']
 
-    print(f"📥 Received: {symbol}  {user_email} | Exchange: {exchange}")
+    print(f"Received: {symbol}  {user_email} | Exchange: {exchange}")
 
     # Skip if any field is missing
     if not symbol or not exchange or not user_email:
-        print("⚠️ Missing data - insertion skipped")
+        print("Missing data - insertion skipped")
         return redirect(url_for('portfolio'))
 
     conn = get_db()
