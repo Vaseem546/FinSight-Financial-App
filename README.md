@@ -1,6 +1,4 @@
-Perfect! Here’s a GitHub-ready, professional README with badges, a table of contents, and polished formatting:
 
----
 
 # ![FinSight]FinSight Financial App
 

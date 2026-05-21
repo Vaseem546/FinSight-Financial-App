@@ -26,6 +26,10 @@ Thumbs.db
 *.cache
 *.tmp
 
+# Database files
+*.db
+*.sqlite
+*.sqlite3
 
 #Stop tracking env file for security
 *.env 

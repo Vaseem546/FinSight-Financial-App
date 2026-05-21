@@ -30,12 +30,34 @@
 <!-- PORTFOLIO SECTION -->
 <section class="section" id="portfolio">
  <h2>My Portfolio</h2>
+ 
+ {% if analytics %}
+ <div class="portfolio-analytics" style="background: rgba(0,255,136,0.1); padding: 20px; border-radius: 10px; margin-bottom: 30px;">
+   <h3>Portfolio Analytics</h3>
+   <div class="output">
+     <div class="output-box">Total Stocks: {{ analytics.total_stocks }}</div>
+     <div class="output-box">Avg FinSight Score: {{ analytics.avg_finsight_score }}/100</div>
+     <div class="output-box">Volatility: {{ analytics.volatility }}%</div>
+     <div class="output-box">Risk Level: {{ analytics.risk_level }}</div>
+     <div class="output-box">Diversification: {{ analytics.diversification_score }}/100</div>
+     <div class="output-box">Health: {{ analytics.portfolio_health }}</div>
+   </div>
+   <h4>Recommendations:</h4>
+   <ul>
+     {% for rec in analytics.recommendations %}
+     <li>{{ rec }}</li>
+     {% endfor %}
+   </ul>
+ </div>
+ {% endif %}
+ 
 {% if stocks %}
   <div class="portfolio-grid">
     {% for stock in stocks %}
       <div class="portfolio-box">
-        <h4>{{ stock.symbol }} </h4>
+        <h4>{{ stock.symbol }} | Score: <span style="color:#00ff88;">{{ stock.score }}/100</span></h4>
         <p>Price: ₹{{ stock.current_price }}</p>
+        <p>RSI: {{ stock.rsi }} | PE: {{ stock.pe_ratio }}</p>
         <p>52W High: ₹{{ stock.fifty_two_week_high }}</p>
         <p>52W Low: ₹{{ stock.fifty_two_week_low }}</p>
 

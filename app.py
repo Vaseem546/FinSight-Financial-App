@@ -1,7 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
-from dotenv import load_dotenv # Used to load the .env file
-import pymysql.cursors       
-from werkzeug.security import generate_password_hash, check_password_hash 
+from dotenv import load_dotenv
+import pymysql.cursors
+from werkzeug.security import generate_password_hash, check_password_hash
 import os
 import json
 import yfinance as yf
@@ -9,41 +9,57 @@ import pandas as pd
 from datetime import datetime, timedelta
 import numpy as np
 from tensorflow.keras.models import load_model
-import plotly
 import plotly.graph_objs as go
 import joblib
-from functools import lru_cache
+import time
+from cachetools import TTLCache, cached
+from concurrent.futures import ThreadPoolExecutor
 # --- END IMPORTS ---
 
-
-load_dotenv() # Load environment variables from .env
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = 'your_secret_key'
 app.config['UPLOAD_FOLDER'] = 'models'
 
 # ========== DATABASE SETUP (MYSQL) ==========
-
-# Configuration pulled from .env
 DB_CONFIG = {
     'host': os.environ.get('MYSQL_HOST'),
     'port': int(os.environ.get('MYSQL_PORT', 3306)),
     'user': os.environ.get('MYSQL_USER'),
     'password': os.environ.get('MYSQL_PASSWORD'),
     'db': os.environ.get('MYSQL_DB'),
-    'cursorclass': pymysql.cursors.DictCursor 
+    'cursorclass': pymysql.cursors.DictCursor
 }
 
 def get_db():
-    """Establishes a connection to the MySQL database."""
     try:
         return pymysql.connect(**DB_CONFIG)
     except Exception as e:
         print(f"Database connection failed: {e}")
         raise
 
-# ========== ROUTES ==========
+# ========== CACHING & RETRY ==========
+_cache = TTLCache(maxsize=100, ttl=300)  # 5 min TTL
 
+def fetch_with_retry(full_symbol, period="10d", retries=3, delay=2):
+    """Fetch stock data with retry logic."""
+    for attempt in range(retries):
+        try:
+            hist = yf.download(full_symbol, period=period, interval="1d", progress=False)
+            if not hist.empty:
+                return hist
+        except Exception as e:
+            print(f"[RETRY {attempt+1}] {full_symbol}: {e}")
+        time.sleep(delay)
+    return None
+
+@cached(_cache)
+def fetch_stock_history(full_symbol):
+    print(f"[CACHE] Fetching data for {full_symbol}")
+    return fetch_with_retry(full_symbol)
+
+# ========== ROUTES ==========
 @app.route('/')
 def index():
     if 'user' in session:
@@ -60,24 +76,18 @@ def login():
             cursor.execute('SELECT * FROM users WHERE email = %s', (email,))
             user = cursor.fetchone()
         conn.close()
-
-        # ✅ Verify password securely
         if user and check_password_hash(user['password'], password):
             session['user'] = email
             return redirect(url_for('index'))
         else:
             return render_template('login_register.html', error="Invalid credentials", show="login")
-
     return render_template('login_register.html', show="login")
-
 
 @app.route('/register', methods=['POST'])
 def register():
     email = request.form['email']
     password = request.form['password']
-
     hashed_password = generate_password_hash(password)
-
     try:
         conn = get_db()
         with conn.cursor() as cursor:
@@ -86,7 +96,6 @@ def register():
         conn.close()
         session['user'] = email
         return redirect(url_for('index'))
-
     except pymysql.err.IntegrityError:
         return render_template('login_register.html', error="Email already registered", show="register")
 
@@ -95,18 +104,6 @@ def logout():
     session.pop('user', None)
     return redirect(url_for('login'))
 
-@lru_cache(maxsize=100)
-def fetch_stock_history(full_symbol):
-    print(f"[CACHE] Fetching data for {full_symbol}")
-    try:
-        stock = yf.Ticker(full_symbol)
-        hist = stock.history(period="10d")
-        if hist.empty:
-            raise Exception("No data returned from yfinance")
-        return hist
-    except Exception as e:
-        print(f"[ERROR] yfinance failed for {full_symbol}: {e}")
-        return None
 # ========== ANALYSIS ==========
 @app.route('/analyze', methods=['POST'])
 def analyze():
@@ -120,11 +117,12 @@ def analyze():
         full_symbol = symbol + '.NS' if exchange == 'NSE' else symbol + '.BO'
 
         hist = fetch_stock_history(full_symbol)
-        if hist is None:
-            raise Exception("Stock data could not be fetched (API may be rate-limited).")
+        if hist is None or hist.empty:
+            raise Exception("Stock data could not be fetched. Please try again in a moment.")
 
+        hist = hist.copy()
         hist.reset_index(inplace=True)
-        hist['Date'] = hist['Date'].dt.strftime('%Y-%m-%d')
+        hist['Date'] = pd.to_datetime(hist['Date']).dt.strftime('%Y-%m-%d')
 
         candlestick_data = [go.Candlestick(
             x=hist['Date'].tolist(),
@@ -168,12 +166,34 @@ def analyze():
 
 
 # ========== SCREENER ==========
-
 NIFTY_50_SYMBOLS = [
     "RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "ICICIBANK.NS", "ADANIENT.NS",
     "KOTAKBANK.NS", "SBIN.NS", "ITC.NS", "BHARTIARTL.NS", "LT.NS", "AXISBANK.NS",
     "WIPRO.NS", "HCLTECH.NS", "SUNPHARMA.NS", "BAJFINANCE.NS", "MARUTI.NS", "HINDUNILVR.NS"
 ]
+
+def fetch_screener_stock(symbol):
+    """Fetch a single stock's info with retry for screener."""
+    for attempt in range(3):
+        try:
+            info = yf.Ticker(symbol).info
+            if info and info.get("currentPrice"):
+                return {
+                    "symbol": symbol.replace(".NS", ""),
+                    "price": info.get("currentPrice"),
+                    "marketCap": (info.get("marketCap") or 0) / 1e7,
+                    "volume": info.get("volume") or 0,
+                    "pe": info.get("trailingPE") or float('inf'),
+                    "pb": info.get("priceToBook") or float('inf'),
+                    "dividendYield": (info.get("dividendYield") or 0) * 100,
+                    "bookValue": info.get("bookValue") or 0,
+                    "high": info.get("fiftyTwoWeekHigh"),
+                    "low": info.get("fiftyTwoWeekLow")
+                }
+        except Exception as e:
+            print(f"[RETRY {attempt+1}] Screener {symbol}: {e}")
+        time.sleep(2)
+    return None
 
 @app.route('/screener', methods=['POST'])
 def screener():
@@ -187,56 +207,27 @@ def screener():
             'min_bookvalue': float(request.form.get('min_bookvalue') or 0),
         }
 
-        filtered_stocks = []
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            results = list(executor.map(fetch_screener_stock, NIFTY_50_SYMBOLS))
 
-        for symbol in NIFTY_50_SYMBOLS:
-            try:
-                stock = yf.Ticker(symbol)
-                info = stock.info
+        filtered_stocks = [
+            data for data in results
+            if data and
+            data["marketCap"] >= filters["min_marketcap"] and
+            data["volume"] >= filters["min_volume"] and
+            data["pe"] <= filters["max_pe"] and
+            data["pb"] <= filters["max_pb"] and
+            data["dividendYield"] >= filters["min_dividend"] and
+            data["bookValue"] >= filters["min_bookvalue"]
+        ]
 
-                data = {
-                    "symbol": symbol.replace(".NS", ""),
-                    "price": info.get("currentPrice"),
-                    "marketCap": (info.get("marketCap") or 0) / 1e7,  # to Cr
-                    "volume": info.get("volume") or 0,
-                    "pe": info.get("trailingPE") or float('inf'),
-                    "pb": info.get("priceToBook") or float('inf'),
-                    "dividendYield": (info.get("dividendYield") or 0) * 100,
-                    "bookValue": info.get("bookValue") or 0,
-                    "high": info.get("fiftyTwoWeekHigh"),
-                    "low": info.get("fiftyTwoWeekLow")
-                }
-
-                if (
-                    data["marketCap"] >= filters["min_marketcap"] and
-                    data["volume"] >= filters["min_volume"] and
-                    data["pe"] <= filters["max_pe"] and
-                    data["pb"] <= filters["max_pb"] and
-                    data["dividendYield"] >= filters["min_dividend"] and
-                    data["bookValue"] >= filters["min_bookvalue"]
-                ):
-                    filtered_stocks.append(data)
-
-            except Exception as stock_error:
-                print(f"Error fetching {symbol}: {stock_error}")
-                continue
-
-        return render_template(
-            "index.html",
-            screener_data=filtered_stocks,
-            scroll_to="screener",
-            user=session.get("user")
-        )
+        return render_template("index.html", screener_data=filtered_stocks, scroll_to="screener", user=session.get("user"))
 
     except Exception as e:
-        return render_template(
-            "index.html",
-            screener_error=f"Error: {e}",
-            scroll_to="screener",
-            user=session.get("user")
-        )
+        return render_template("index.html", screener_error=f"Error: {e}", scroll_to="screener", user=session.get("user"))
 
-# ========== PREDICTION ==========
+
+# ========== PREDICTOR ==========
 @app.route('/predict', methods=['POST'])
 def predict():
     symbol = request.form['predict_symbol'].upper()
@@ -248,14 +239,14 @@ def predict():
         scaler_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{symbol}_scaler.save")
 
         if not os.path.exists(model_path) or not os.path.exists(scaler_path):
-            return render_template("index.html", error=f"No data to predict for {symbol}: Model or Scaler not found for this symbol.", scroll_to="predictor", user=session.get("user"))
+            return render_template("index.html", error=f"No data to predict for {symbol}: Model or Scaler not found.", scroll_to="predictor", user=session.get("user"))
 
-        model = load_model(model_path)
-        scaler = joblib.load(scaler_path)  # ✅ FIXED HERE
+        model = load_model(model_path, compile=False)
+        scaler = joblib.load(scaler_path)
 
-        df = yf.download(full_symbol, period="90d", interval="1d")
-        if df.empty or len(df) < 60:
-            return render_template("index.html", error=f"No data to predict for {symbol}: Not enough data", scroll_to="predictor", user=session.get("user"))
+        df = fetch_with_retry(full_symbol, period="90d")
+        if df is None or df.empty or len(df) < 60:
+            return render_template("index.html", error=f"No data to predict for {symbol}: Not enough data.", scroll_to="predictor", user=session.get("user"))
 
         close_data = df['Close'].values.reshape(-1, 1)
         scaled_data = scaler.transform(close_data)
@@ -275,6 +266,8 @@ def predict():
 
     except Exception as e:
         return render_template("index.html", error=f"Prediction failed: {e}", scroll_to="predictor", user=session.get("user"))
+
+
 # ========== PORTFOLIO ==========
 @app.route('/portfolio')
 def portfolio():
@@ -282,45 +275,45 @@ def portfolio():
         return redirect(url_for('login'))
 
     user_email = session['user']
-
     conn = get_db()
     with conn.cursor() as cursor:
-        # SQL Query updated for MySQL placeholder
-        cursor.execute(convert_query("SELECT symbol, exchange FROM portfolio WHERE user_email = ?"), (user_email,))
+        cursor.execute('SELECT symbol, exchange FROM portfolio WHERE user_email = %s', (user_email,))
         rows = cursor.fetchall()
     conn.close()
 
     stocks = []
-
-    # Iterate through the rows (which are dictionaries due to DictCursor)
     for row in rows:
         try:
             symbol = row['symbol']
             exchange = row['exchange']
-            
             full_symbol = f"{symbol}.NS" if exchange == "NSE" else f"{symbol}.BO"
-            data = yf.Ticker(full_symbol).info
 
-            # Ensure data contains expected keys
-            if 'currentPrice' not in data:
-                raise ValueError("Missing currentPrice in yfinance info")
+            info = None
+            for attempt in range(3):
+                try:
+                    info = yf.Ticker(full_symbol).info
+                    if info and info.get('currentPrice'):
+                        break
+                except Exception:
+                    time.sleep(2)
 
-            stock_info = {
+            if not info or not info.get('currentPrice'):
+                raise ValueError("Could not fetch stock info")
+
+            stocks.append({
                 'symbol': symbol,
                 'exchange': exchange,
-                'current_price': round(data['currentPrice'], 2),
-                'fifty_two_week_high': round(data.get('fiftyTwoWeekHigh', 0), 2),
-                'fifty_two_week_low': round(data.get('fiftyTwoWeekLow', 0), 2)
-            }
-            stocks.append(stock_info)
-
+                'current_price': round(info['currentPrice'], 2),
+                'fifty_two_week_high': round(info.get('fiftyTwoWeekHigh', 0), 2),
+                'fifty_two_week_low': round(info.get('fiftyTwoWeekLow', 0), 2)
+            })
         except Exception as e:
-            print(f"⚠️ Failed to fetch stock info for {symbol}: {e}")
+            print(f"Failed to fetch stock info for {symbol}: {e}")
             continue
 
     return render_template('portfolio.html', stocks=stocks, user=user_email)
 
-# --- Add to Portfolio ---
+
 @app.route('/add_to_portfolio', methods=['POST'])
 def add_to_portfolio():
     if 'user' not in session:
@@ -330,24 +323,17 @@ def add_to_portfolio():
     exchange = request.form.get('exchange')
     user_email = session['user']
 
-    print(f"📥 Received: {symbol}  {user_email} | Exchange: {exchange}")
-
-    # Skip if any field is missing
     if not symbol or not exchange or not user_email:
-        print("⚠️ Missing data - insertion skipped")
         return redirect(url_for('portfolio'))
 
     conn = get_db()
     with conn.cursor() as cursor:
-        # SQL Query updated for MySQL placeholder
-        cursor.execute(convert_query('INSERT INTO portfolio (user_email, symbol, exchange) VALUES (?, ?, ?)'), 
-                     (user_email, symbol, exchange))
+        cursor.execute('INSERT INTO portfolio (user_email, symbol, exchange) VALUES (%s, %s, %s)', (user_email, symbol, exchange))
     conn.commit()
     conn.close()
-
     return redirect(url_for('portfolio'))
 
-# --- Remove from Portfolio ---
+
 @app.route('/remove_from_portfolio', methods=['POST'])
 def remove_from_portfolio():
     if 'user' not in session:
@@ -358,11 +344,9 @@ def remove_from_portfolio():
 
     conn = get_db()
     with conn.cursor() as cursor:
-        # SQL Query updated for MySQL placeholder
-        cursor.execute(convert_query('DELETE FROM portfolio WHERE user_email = ? AND symbol = ?'), (email, symbol))
+        cursor.execute('DELETE FROM portfolio WHERE user_email = %s AND symbol = %s', (email, symbol))
     conn.commit()
     conn.close()
-
     return redirect(url_for('portfolio'))
 
 

@@ -70,7 +70,7 @@
   {% if analysis_error %}
     <div class="output"><p class="error">{{ analysis_error }}</p></div>
   {% elif analysis %}
-    <h3>Stock Info for {{ analysis.symbol }}</h3>
+    <h3>Stock Info for {{ analysis.symbol }} | FinSight Score: <span style="color:#00ff88;">{{ analysis.finsight_score }}/100</span></h3>
     <div class="output">
       <div class="output-box">Current Price: ₹{{ analysis.price }}</div>
       <div class="output-box">Open: ₹{{ analysis.open }}</div>
@@ -80,12 +80,14 @@
       <div class="output-box">Volume: {{ analysis.volume }}</div>
       <div class="output-box">52W High: ₹{{ analysis.fiftyTwoWeekHigh }}</div>
       <div class="output-box">52W Low: ₹{{ analysis.fiftyTwoWeekLow }}</div>
+      <div class="output-box">RSI: {{ analysis.rsi }}</div>
+      <div class="output-box">PE Ratio: {{ analysis.pe_ratio }}</div>
     </div>
 
  {% if analysis_symbol %}
   <form method="POST" action="{{ url_for('add_to_portfolio') }}">
     <input type="hidden" name="symbol" value="{{ analysis_symbol }}">
-    <input type="hidden" name="exchange" value="NSE">  <!-- Or make this dynamic -->
+    <input type="hidden" name="exchange" value="{{ exchange }}">
     <button type="submit">Save to Portfolio</button>
   </form>
 {% endif %}
@@ -104,34 +106,42 @@
   <!-- Screener Filter Form -->
   <form method="POST" action="{{ url_for('screener') }}" class="screener-form">
     <div class="form-grid-with-button">
-      <input type="number" name="min_marketcap" placeholder="Min Market Cap (in Cr)">
-      <input type="number" name="min_volume" placeholder="Min Volume">
-      <input type="number" name="max_pe" placeholder="Max PE Ratio">
-      <input type="number" name="max_pb" placeholder="Max PB Ratio">
-      <input type="number" name="min_dividend" placeholder="Min Dividend Yield (%)">
-      <input type="number" name="min_bookvalue" placeholder="Min Book Value/Share">
+      <input type="number" name="min_score" placeholder="Min FinSight Score (0-100)" step="0.1" min="0" max="100">
+      <input type="number" name="max_pe" placeholder="Max PE Ratio" step="0.1" min="0">
+      <input type="number" name="min_rsi" placeholder="Min RSI" step="0.1" min="0" max="100">
+      <input type="number" name="max_rsi" placeholder="Max RSI" step="0.1" min="0" max="100">
       <button type="submit" class="run">Run Screener</button>
     </div>
   </form>
    {% if screener_data %}
-    <h3>Screener Results</h3>
+    <h3>Screener Results ({{ screener_data|length }} stocks found)</h3>
+    <table style="width:100%; margin-top:20px; border-collapse: collapse; background: rgba(255,255,255,0.05);">
+      <thead>
+        <tr style="background: rgba(0,255,136,0.2); border-bottom: 2px solid #00ff88;">
+          <th style="padding: 15px; text-align: left; color: #00ff88; font-weight: bold;">Symbol</th>
+          <th style="padding: 15px; text-align: left; color: #00ff88; font-weight: bold;">Price (₹)</th>
+          <th style="padding: 15px; text-align: left; color: #00ff88; font-weight: bold;">FinSight Score</th>
+          <th style="padding: 15px; text-align: left; color: #00ff88; font-weight: bold;">RSI</th>
+          <th style="padding: 15px; text-align: left; color: #00ff88; font-weight: bold;">PE Ratio</th>
+          <th style="padding: 15px; text-align: left; color: #00ff88; font-weight: bold;">52W High (₹)</th>
+          <th style="padding: 15px; text-align: left; color: #00ff88; font-weight: bold;">52W Low (₹)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for stock in screener_data %}
+        <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
+          <td style="padding: 12px;"><strong>{{ stock.symbol }}</strong></td>
+          <td style="padding: 12px;">₹{{ stock.price }}</td>
+          <td style="padding: 12px;"><span style="color:#00ff88;">{{ stock.score }}/100</span></td>
+          <td style="padding: 12px;">{{ stock.rsi }}</td>
+          <td style="padding: 12px;">{{ stock.pe }}</td>
+          <td style="padding: 12px;">₹{{ stock.high }}</td>
+          <td style="padding: 12px;">₹{{ stock.low }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
    {% endif %}
-
-    <div class="output">
-      {% for stock in screener_data %}
-        <div class="output-box">
-          <strong>{{ stock.symbol }}</strong> — ₹{{ stock.price }}<br>
-          MCap: ₹{{ stock.marketCap }} Cr<br>
-          Vol: {{ stock.volume }}<br>
-          PE: {{ stock.pe }} 
-          PB: {{ stock.pb }}<br>
-          DY: {{ stock.dividendYield }}% 
-          Book Value: ₹{{ stock.bookValue }}<br>
-          52W High: ₹{{ stock.high }} 
-          52W Low: ₹{{ stock.low }}
-        </div>
-      {% endfor %}
-    </div>
   {% if screener_error %}
     <p class="error">{{ screener_error }}</p>
   {% endif %}
@@ -155,6 +165,9 @@
   {% if forecast %}
     <div class="prediction-result">
       <h3>7-Day Forecast for {{ symbol }}</h3>
+      {% if model_accuracy %}
+      <p style="color:#00ff88;">Model Accuracy: {{ model_accuracy.avg_accuracy }}% (Based on {{ model_accuracy.total_predictions }} predictions)</p>
+      {% endif %}
       <table class="prediction-table">
         <thead>
           <tr>
