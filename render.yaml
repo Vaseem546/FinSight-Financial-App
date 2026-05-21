@@ -4,12 +4,10 @@ services:
     env: python
     region: oregon
     branch: main
-    buildCommand: pip install --no-cache-dir --prefer-binary -r requirements.txt
-    startCommand: gunicorn app:app
+    buildCommand: pip install --no-cache-dir --prefer-binary -r requirements.txt && python setup.py
+    startCommand: gunicorn app_new:app
     build:
       pythonVersion: 3.11.9
-    preInstall:
-      - apt-get update && apt-get install -y build-essential libpq-dev
     envVars:
       - key: ENV
         value: production
