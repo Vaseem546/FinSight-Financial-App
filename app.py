@@ -18,6 +18,21 @@ app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-producti
 # Initialize database on startup
 init_db()
 
+# Check if stock data exists, if not generate it
+from database import StockMetrics
+db = SessionLocal()
+try:
+    stock_count = db.query(StockMetrics).count()
+    if stock_count == 0:
+        print("[INIT] No stock data found, generating 60 stocks...")
+        from data_sync import sync_all_stocks
+        sync_all_stocks()
+        print("[INIT] Stock data generation complete")
+    else:
+        print(f"[INFO] Found {stock_count} stocks in database")
+finally:
+    db.close()
+
 # ========== AUTHENTICATION ==========
 @app.route('/')
 def index():
