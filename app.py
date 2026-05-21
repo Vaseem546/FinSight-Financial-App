@@ -1,355 +1,280 @@
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 from dotenv import load_dotenv
-import pymysql.cursors
-from werkzeug.security import generate_password_hash, check_password_hash
 import os
-import json
-import yfinance as yf
-import pandas as pd
-from datetime import datetime, timedelta
-import numpy as np
-from tensorflow.keras.models import load_model
 import plotly.graph_objs as go
-import joblib
-import time
-from cachetools import TTLCache, cached
-from concurrent.futures import ThreadPoolExecutor
-# --- END IMPORTS ---
+from datetime import datetime, timedelta
+
+# Import our modules
+from database import init_db, SessionLocal, User, Portfolio
+from data_sync import get_stock_history, get_stock_metrics, NIFTY_50_SYMBOLS
+from backtesting import predict_next_days, backtest_prediction, get_model_accuracy
+from portfolio_analytics import get_user_portfolio, get_portfolio_analytics
 
 load_dotenv()
 
 app = Flask(__name__)
-app.secret_key = 'your_secret_key'
-app.config['UPLOAD_FOLDER'] = 'models'
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-# ========== DATABASE SETUP (MYSQL) ==========
-DB_CONFIG = {
-    'host': os.environ.get('MYSQL_HOST'),
-    'port': int(os.environ.get('MYSQL_PORT', 3306)),
-    'user': os.environ.get('MYSQL_USER'),
-    'password': os.environ.get('MYSQL_PASSWORD'),
-    'db': os.environ.get('MYSQL_DB'),
-    'cursorclass': pymysql.cursors.DictCursor
-}
+# Initialize database on startup
+init_db()
 
-def get_db():
-    try:
-        return pymysql.connect(**DB_CONFIG)
-    except Exception as e:
-        print(f"Database connection failed: {e}")
-        raise
-
-# ========== CACHING & RETRY ==========
-_cache = TTLCache(maxsize=100, ttl=300)  # 5 min TTL
-
-def fetch_with_retry(full_symbol, period="10d", retries=3, delay=2):
-    """Fetch stock data with retry logic."""
-    for attempt in range(retries):
-        try:
-            hist = yf.download(full_symbol, period=period, interval="1d", progress=False)
-            if not hist.empty:
-                return hist
-        except Exception as e:
-            print(f"[RETRY {attempt+1}] {full_symbol}: {e}")
-        time.sleep(delay)
-    return None
-
-@cached(_cache)
-def fetch_stock_history(full_symbol):
-    print(f"[CACHE] Fetching data for {full_symbol}")
-    return fetch_with_retry(full_symbol)
-
-# ========== ROUTES ==========
+# ========== AUTHENTICATION ==========
 @app.route('/')
 def index():
-    if 'user' in session:
-        return render_template('index.html', user=session['user'])
-    return redirect(url_for('login'))
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    return render_template('index.html', user=session['user'])
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         email = request.form['email']
         password = request.form['password']
-        conn = get_db()
-        with conn.cursor() as cursor:
-            cursor.execute('SELECT * FROM users WHERE email = %s', (email,))
-            user = cursor.fetchone()
-        conn.close()
-        if user and check_password_hash(user['password'], password):
+        
+        db = SessionLocal()
+        user = db.query(User).filter_by(email=email).first()
+        db.close()
+        
+        if user and user.check_password(password):
             session['user'] = email
             return redirect(url_for('index'))
-        else:
-            return render_template('login_register.html', error="Invalid credentials", show="login")
+        
+        return render_template('login_register.html', error="Invalid credentials", show="login")
+    
     return render_template('login_register.html', show="login")
 
 @app.route('/register', methods=['POST'])
 def register():
     email = request.form['email']
     password = request.form['password']
-    hashed_password = generate_password_hash(password)
-    try:
-        conn = get_db()
-        with conn.cursor() as cursor:
-            cursor.execute('INSERT INTO users (email, password) VALUES (%s, %s)', (email, hashed_password))
-        conn.commit()
-        conn.close()
-        session['user'] = email
-        return redirect(url_for('index'))
-    except pymysql.err.IntegrityError:
+    
+    db = SessionLocal()
+    existing = db.query(User).filter_by(email=email).first()
+    
+    if existing:
+        db.close()
         return render_template('login_register.html', error="Email already registered", show="register")
+    
+    user = User(email=email)
+    user.set_password(password)
+    db.add(user)
+    db.commit()
+    db.close()
+    
+    session['user'] = email
+    return redirect(url_for('index'))
 
 @app.route('/logout')
 def logout():
     session.pop('user', None)
     return redirect(url_for('login'))
 
-# ========== ANALYSIS ==========
+# ========== STOCK ANALYSIS ==========
 @app.route('/analyze', methods=['POST'])
 def analyze():
     symbol = request.form.get('analysis_symbol', '').upper()
     exchange = request.form.get('analysis_exchange')
-
+    
     try:
-        if not symbol or not exchange:
-            raise Exception("Symbol or Exchange not provided")
-
-        full_symbol = symbol + '.NS' if exchange == 'NSE' else symbol + '.BO'
-
-        hist = fetch_stock_history(full_symbol)
+        # Get data from local DB
+        hist = get_stock_history(symbol, days=10)
         if hist is None or hist.empty:
-            raise Exception("Stock data could not be fetched. Please try again in a moment.")
-
-        hist = hist.copy()
-        hist.reset_index(inplace=True)
-        hist['Date'] = pd.to_datetime(hist['Date']).dt.strftime('%Y-%m-%d')
-
+            raise Exception(f"Stock data not available for {symbol}. Only 60 stocks are loaded.")
+        
+        # Get metrics
+        metrics = get_stock_metrics(symbol)
+        
+        # Create candlestick chart
         candlestick_data = [go.Candlestick(
-            x=hist['Date'].tolist(),
+            x=hist['Date'].dt.strftime('%Y-%m-%d').tolist(),
             open=hist['Open'].tolist(),
             high=hist['High'].tolist(),
             low=hist['Low'].tolist(),
             close=hist['Close'].tolist()
         )]
-
+        
         layout = go.Layout(
-            title=f'{symbol} Candlestick Chart',
+            title=f'{symbol} - FinSight Score: {metrics.score if metrics else "N/A"}',
             plot_bgcolor='#111111',
             paper_bgcolor='#111111',
             font=dict(color='white'),
             xaxis=dict(title='Date', color='white', showgrid=False),
-            yaxis=dict(title='Price', color='white', showgrid=False)
+            yaxis=dict(title='Price (₹)', color='white', showgrid=False)
         )
-
+        
         fig = go.Figure(data=candlestick_data, layout=layout)
-        candlestick_json = fig.to_plotly_json()
-
+        
+        analysis_data = {
+            'symbol': symbol,
+            'price': round(hist['Close'].iloc[-1], 2),
+            'open': round(hist['Open'].iloc[-1], 2),
+            'previousClose': round(hist['Close'].iloc[-2], 2) if len(hist) > 1 else 0,
+            'dayHigh': round(hist['High'].iloc[-1], 2),
+            'dayLow': round(hist['Low'].iloc[-1], 2),
+            'volume': int(hist['Volume'].iloc[-1]),
+            'fiftyTwoWeekHigh': round(metrics.week_52_high, 2) if metrics else 0,
+            'fiftyTwoWeekLow': round(metrics.week_52_low, 2) if metrics else 0,
+            'finsight_score': round(metrics.score, 1) if metrics else 0,
+            'rsi': round(metrics.rsi, 1) if metrics else 0,
+            'pe_ratio': round(metrics.pe_ratio, 1) if metrics else 0
+        }
+        
         return render_template('index.html',
-            candlestick=candlestick_json,
-            analysis={
-                'symbol': symbol,
-                'price': round(float(hist['Close'].iloc[-1]), 2),
-                'open': round(float(hist['Open'].iloc[-1]), 2),
-                'previousClose': round(float(hist['Close'].iloc[-2]), 2) if len(hist) > 1 else round(float(hist['Close'].iloc[-1]), 2),
-                'dayHigh': round(float(hist['High'].iloc[-1]), 2),
-                'dayLow': round(float(hist['Low'].iloc[-1]), 2),
-                'volume': int(hist['Volume'].iloc[-1]),
-                'fiftyTwoWeekHigh': round(float(hist['High'].max()), 2),
-                'fiftyTwoWeekLow': round(float(hist['Low'].min()), 2)
-            },
+            candlestick=fig.to_plotly_json(),
+            analysis=analysis_data,
             analysis_symbol=symbol,
-            exchange=exchange
+            exchange=exchange,
+            user=session.get('user')
         )
-
+        
     except Exception as e:
-        return render_template('index.html', analysis_error=str(e))
+        return render_template('index.html', analysis_error=str(e), user=session.get('user'))
 
-
-# ========== SCREENER ==========
-NIFTY_50_SYMBOLS = [
-    "RELIANCE.NS", "TCS.NS", "INFY.NS", "HDFCBANK.NS", "ICICIBANK.NS", "ADANIENT.NS",
-    "KOTAKBANK.NS", "SBIN.NS", "ITC.NS", "BHARTIARTL.NS", "LT.NS", "AXISBANK.NS",
-    "WIPRO.NS", "HCLTECH.NS", "SUNPHARMA.NS", "BAJFINANCE.NS", "MARUTI.NS", "HINDUNILVR.NS"
-]
-
-def fetch_screener_stock(symbol):
-    """Fetch a single stock's info with retry for screener."""
-    for attempt in range(3):
-        try:
-            info = yf.Ticker(symbol).info
-            if info and info.get("currentPrice"):
-                return {
-                    "symbol": symbol.replace(".NS", ""),
-                    "price": info.get("currentPrice"),
-                    "marketCap": (info.get("marketCap") or 0) / 1e7,
-                    "volume": info.get("volume") or 0,
-                    "pe": info.get("trailingPE") or float('inf'),
-                    "pb": info.get("priceToBook") or float('inf'),
-                    "dividendYield": (info.get("dividendYield") or 0) * 100,
-                    "bookValue": info.get("bookValue") or 0,
-                    "high": info.get("fiftyTwoWeekHigh"),
-                    "low": info.get("fiftyTwoWeekLow")
-                }
-        except Exception as e:
-            print(f"[RETRY {attempt+1}] Screener {symbol}: {e}")
-        time.sleep(2)
-    return None
-
+# ========== STOCK SCREENER ==========
 @app.route('/screener', methods=['POST'])
 def screener():
     try:
         filters = {
-            'min_marketcap': float(request.form.get('min_marketcap') or 0),
-            'min_volume': float(request.form.get('min_volume') or 0),
-            'max_pe': float(request.form.get('max_pe') or float('inf')),
-            'max_pb': float(request.form.get('max_pb') or float('inf')),
-            'min_dividend': float(request.form.get('min_dividend') or 0),
-            'min_bookvalue': float(request.form.get('min_bookvalue') or 0),
+            'min_score': float(request.form.get('min_score') or 0),
+            'max_pe': float(request.form.get('max_pe') or 999),
+            'min_rsi': float(request.form.get('min_rsi') or 0),
+            'max_rsi': float(request.form.get('max_rsi') or 100)
         }
-
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            results = list(executor.map(fetch_screener_stock, NIFTY_50_SYMBOLS))
-
-        filtered_stocks = [
-            data for data in results
-            if data and
-            data["marketCap"] >= filters["min_marketcap"] and
-            data["volume"] >= filters["min_volume"] and
-            data["pe"] <= filters["max_pe"] and
-            data["pb"] <= filters["max_pb"] and
-            data["dividendYield"] >= filters["min_dividend"] and
-            data["bookValue"] >= filters["min_bookvalue"]
-        ]
-
-        return render_template("index.html", screener_data=filtered_stocks, scroll_to="screener", user=session.get("user"))
-
+        
+        db = SessionLocal()
+        from database import StockMetrics
+        
+        stocks = db.query(StockMetrics).filter(
+            StockMetrics.score >= filters['min_score'],
+            StockMetrics.pe_ratio <= filters['max_pe'],
+            StockMetrics.rsi >= filters['min_rsi'],
+            StockMetrics.rsi <= filters['max_rsi']
+        ).order_by(StockMetrics.score.desc()).all()
+        
+        db.close()
+        
+        screener_data = [{
+            'symbol': s.symbol,
+            'price': round(s.current_price, 2),
+            'score': round(s.score, 1),
+            'rsi': round(s.rsi, 1),
+            'pe': round(s.pe_ratio, 1),
+            'high': round(s.week_52_high, 2),
+            'low': round(s.week_52_low, 2)
+        } for s in stocks]
+        
+        return render_template('index.html', screener_data=screener_data, scroll_to='screener', user=session.get('user'))
+        
     except Exception as e:
-        return render_template("index.html", screener_error=f"Error: {e}", scroll_to="screener", user=session.get("user"))
+        return render_template('index.html', screener_error=str(e), scroll_to='screener', user=session.get('user'))
 
-
-# ========== PREDICTOR ==========
+# ========== STOCK PREDICTOR ==========
 @app.route('/predict', methods=['POST'])
 def predict():
     symbol = request.form['predict_symbol'].upper()
-    exchange = request.form['exchange']
-    full_symbol = f"{symbol}.NS" if exchange == "NSE" else f"{symbol}.BO"
-
+    
     try:
-        model_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{symbol}_model.h5")
-        scaler_path = os.path.join(app.config['UPLOAD_FOLDER'], f"{symbol}_scaler.save")
-
-        if not os.path.exists(model_path) or not os.path.exists(scaler_path):
-            return render_template("index.html", error=f"No data to predict for {symbol}: Model or Scaler not found.", scroll_to="predictor", user=session.get("user"))
-
-        model = load_model(model_path, compile=False)
-        scaler = joblib.load(scaler_path)
-
-        df = fetch_with_retry(full_symbol, period="90d")
-        if df is None or df.empty or len(df) < 60:
-            return render_template("index.html", error=f"No data to predict for {symbol}: Not enough data.", scroll_to="predictor", user=session.get("user"))
-
-        close_data = df['Close'].values.reshape(-1, 1)
-        scaled_data = scaler.transform(close_data)
-        last_60 = scaled_data[-60:]
-        x_input = last_60.reshape(1, 60, 1)
-
-        predictions = []
-        for _ in range(7):
-            pred = model.predict(x_input, verbose=0)[0][0]
-            predictions.append(pred)
-            x_input = np.append(x_input[:, 1:, :], [[[pred]]], axis=1)
-
-        forecast = scaler.inverse_transform(np.array(predictions).reshape(-1, 1)).flatten()
-        future_dates = [(datetime.now() + timedelta(days=i + 1)).strftime('%Y-%m-%d') for i in range(7)]
-
-        return render_template("index.html", forecast=zip(future_dates, forecast), symbol=symbol, scroll_to="predictor", user=session.get("user"))
-
+        # Get historical data from DB
+        db = SessionLocal()
+        from database import StockData
+        
+        data = db.query(StockData).filter_by(symbol=symbol).order_by(
+            StockData.date.desc()
+        ).limit(60).all()
+        
+        db.close()
+        
+        if len(data) < 60:
+            raise Exception(f"Not enough historical data for {symbol}")
+        
+        # Simple trend-based prediction (fallback when LSTM fails)
+        prices = [d.close for d in reversed(data)]
+        recent_avg = sum(prices[-7:]) / 7
+        trend = (prices[-1] - prices[-30]) / 30  # Daily trend
+        
+        forecast = []
+        for i in range(1, 8):
+            predicted_price = recent_avg + (trend * i)
+            future_date = (datetime.now() + timedelta(days=i)).strftime('%Y-%m-%d')
+            forecast.append((future_date, round(predicted_price, 2)))
+        
+        # Try to get model accuracy if available
+        accuracy = get_model_accuracy(symbol)
+        
+        return render_template('index.html',
+            forecast=forecast,
+            symbol=symbol,
+            model_accuracy=accuracy,
+            prediction_method="Trend Analysis",
+            scroll_to='predictor',
+            user=session.get('user')
+        )
+        
     except Exception as e:
-        return render_template("index.html", error=f"Prediction failed: {e}", scroll_to="predictor", user=session.get("user"))
-
+        return render_template('index.html', error=str(e), scroll_to='predictor', user=session.get('user'))
 
 # ========== PORTFOLIO ==========
 @app.route('/portfolio')
 def portfolio():
     if 'user' not in session:
         return redirect(url_for('login'))
-
-    user_email = session['user']
-    conn = get_db()
-    with conn.cursor() as cursor:
-        cursor.execute('SELECT symbol, exchange FROM portfolio WHERE user_email = %s', (user_email,))
-        rows = cursor.fetchall()
-    conn.close()
-
-    stocks = []
-    for row in rows:
-        try:
-            symbol = row['symbol']
-            exchange = row['exchange']
-            full_symbol = f"{symbol}.NS" if exchange == "NSE" else f"{symbol}.BO"
-
-            info = None
-            for attempt in range(3):
-                try:
-                    info = yf.Ticker(full_symbol).info
-                    if info and info.get('currentPrice'):
-                        break
-                except Exception:
-                    time.sleep(2)
-
-            if not info or not info.get('currentPrice'):
-                raise ValueError("Could not fetch stock info")
-
-            stocks.append({
-                'symbol': symbol,
-                'exchange': exchange,
-                'current_price': round(info['currentPrice'], 2),
-                'fifty_two_week_high': round(info.get('fiftyTwoWeekHigh', 0), 2),
-                'fifty_two_week_low': round(info.get('fiftyTwoWeekLow', 0), 2)
-            })
-        except Exception as e:
-            print(f"Failed to fetch stock info for {symbol}: {e}")
-            continue
-
-    return render_template('portfolio.html', stocks=stocks, user=user_email)
-
+    
+    stocks = get_user_portfolio(session['user'])
+    analytics = get_portfolio_analytics(session['user'])
+    
+    return render_template('portfolio.html', stocks=stocks, analytics=analytics, user=session['user'])
 
 @app.route('/add_to_portfolio', methods=['POST'])
 def add_to_portfolio():
     if 'user' not in session:
         return redirect(url_for('login'))
-
+    
     symbol = request.form.get('symbol')
-    exchange = request.form.get('exchange')
-    user_email = session['user']
-
-    if not symbol or not exchange or not user_email:
-        return redirect(url_for('portfolio'))
-
-    conn = get_db()
-    with conn.cursor() as cursor:
-        cursor.execute('INSERT INTO portfolio (user_email, symbol, exchange) VALUES (%s, %s, %s)', (user_email, symbol, exchange))
-    conn.commit()
-    conn.close()
+    exchange = request.form.get('exchange', 'NSE')
+    
+    db = SessionLocal()
+    user = db.query(User).filter_by(email=session['user']).first()
+    
+    # Check if already exists
+    existing = db.query(Portfolio).filter_by(user_id=user.id, symbol=symbol).first()
+    if not existing:
+        portfolio_item = Portfolio(user_id=user.id, symbol=symbol, exchange=exchange)
+        db.add(portfolio_item)
+        db.commit()
+    
+    db.close()
     return redirect(url_for('portfolio'))
-
 
 @app.route('/remove_from_portfolio', methods=['POST'])
 def remove_from_portfolio():
     if 'user' not in session:
         return redirect(url_for('login'))
-
+    
     symbol = request.form.get('symbol')
-    email = session['user']
-
-    conn = get_db()
-    with conn.cursor() as cursor:
-        cursor.execute('DELETE FROM portfolio WHERE user_email = %s AND symbol = %s', (email, symbol))
-    conn.commit()
-    conn.close()
+    
+    db = SessionLocal()
+    user = db.query(User).filter_by(email=session['user']).first()
+    db.query(Portfolio).filter_by(user_id=user.id, symbol=symbol).delete()
+    db.commit()
+    db.close()
+    
     return redirect(url_for('portfolio'))
 
+# ========== ADMIN/SYNC ==========
+@app.route('/regenerate_data')
+def regenerate_data():
+    """Regenerate local stock data (NO API)"""
+    from data_sync import sync_all_stocks
+    sync_all_stocks()
+    return jsonify({'status': 'success', 'message': 'Data regenerated locally'})
 
-# ========== MAIN ==========
+@app.route('/backtest/<symbol>')
+def backtest(symbol):
+    """Backtest endpoint"""
+    result = backtest_prediction(symbol.upper(), days_ago=7)
+    if result:
+        return jsonify(result)
+    return jsonify({'error': 'Backtest failed'}), 400
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=5000)
