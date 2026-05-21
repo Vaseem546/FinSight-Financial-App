@@ -16,24 +16,36 @@ app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
 # Initialize database on startup
-init_db()
-
-# Check if stock data exists, if not generate it
-from database import StockMetrics
-db = SessionLocal()
 try:
-    stock_count = db.query(StockMetrics).count()
-    if stock_count == 0:
-        print("[INIT] No stock data found, generating 60 stocks...")
-        from data_sync import sync_all_stocks
-        sync_all_stocks()
-        print("[INIT] Stock data generation complete")
-    else:
-        print(f"[INFO] Found {stock_count} stocks in database")
-finally:
-    db.close()
+    print("[INIT] Initializing database...")
+    init_db()
+    print("[INIT] Database initialized")
+    
+    # Check if stock data exists, if not generate it
+    from database import StockMetrics
+    db = SessionLocal()
+    try:
+        stock_count = db.query(StockMetrics).count()
+        if stock_count == 0:
+            print("[INIT] No stock data found, generating 60 stocks...")
+            from data_sync import sync_all_stocks
+            sync_all_stocks()
+            print("[INIT] Stock data generation complete")
+        else:
+            print(f"[INFO] Found {stock_count} stocks in database")
+    finally:
+        db.close()
+except Exception as e:
+    print(f"[ERROR] Initialization failed: {e}")
+    import traceback
+    traceback.print_exc()
 
 # ========== AUTHENTICATION ==========
+@app.route('/health')
+def health():
+    """Health check endpoint"""
+    return jsonify({'status': 'healthy', 'message': 'FinSight is running'}), 200
+
 @app.route('/')
 def index():
     if 'user' not in session:

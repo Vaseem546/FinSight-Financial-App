@@ -1,2 +1,1 @@
-web: gunicorn app:app
-web: python app.py
+web: gunicorn app:app --bind 0.0.0.0:$PORT --timeout 120 --log-level debug --access-logfile - --error-logfile -
