@@ -22,11 +22,13 @@ FinSight is a full-stack financial web application providing retail investors wi
 
 ## Features
 
-* **User Authentication** — Secure login and registration with Flask and MySQL.
-* **Stock Market Analysis** — Access live stock data, company profiles, and interactive charts.
-* **LSTM-Based Stock Price Prediction** — Predict future stock prices for Nifty 50 using pre-trained LSTM models.
-* **Stock Screener** — Filter and discover high-potential stocks based on key metrics.
+* **User Authentication** — Secure login and registration with Flask and SQLite.
+* **Stock Market Analysis** — Access 60 stocks with realistic data, company profiles, and interactive charts.
+* **Trend-Based Stock Price Prediction** — Predict future stock prices using custom algorithms.
+* **Stock Screener** — Filter and discover high-potential stocks based on FinSight Score, RSI, PE Ratio.
+* **Portfolio Analytics** — Track portfolio risk, volatility, and diversification scores.
 * **Responsive UI** — Mobile-first, dark-themed interface with smooth scroll and glassmorphism effects.
+* **100% API-Independent** — All data generated locally, no external API dependencies.
 
 ---
 
@@ -34,8 +36,8 @@ FinSight is a full-stack financial web application providing retail investors wi
 
 * **Frontend:** HTML, CSS, JavaScript
 * **Backend:** Flask (Python 3.11)
-* **Database:** MySQL
-* **ML Models:** TensorFlow, yFinance (for training)
+* **Database:** SQLite (API-independent)
+* **Data Generation:** NumPy, Pandas (Local algorithms, no external APIs)
 * **Deployment:** Render
 
 ---
@@ -103,11 +105,10 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-5. **Set up environment variables in a `.env` file:**
+5. **Initialize database and generate stock data:**
 
-```text
-OPENAI_API_KEY=your_openai_api_key
-DATABASE_URI=mysql://user:password@localhost/db_name
+```bash
+python setup.py
 ```
 
 6. **Run the Flask server:**
