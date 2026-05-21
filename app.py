@@ -15,49 +15,40 @@ load_dotenv()
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-# Initialize database on startup
-try:
-    print("[INIT] Initializing database...", flush=True)
-    init_db()
-    print("[INIT] Database initialized", flush=True)
+# Flag to track if initialization is done
+initialized = False
+
+def initialize_app():
+    """Initialize database and generate data if needed"""
+    global initialized
+    if initialized:
+        return
     
-    # Check if stock data exists, if not generate it IN BACKGROUND
-    from database import StockMetrics
-    db = SessionLocal()
     try:
-        stock_count = db.query(StockMetrics).count()
-        print(f"[INFO] Found {stock_count} stocks in database", flush=True)
+        print("[INIT] Initializing database...", flush=True)
+        init_db()
+        print("[INIT] Database initialized", flush=True)
         
-        if stock_count == 0:
-            print("[INIT] No stock data found, will generate on first request", flush=True)
-            # Don't block startup - generate on first request instead
-    finally:
-        db.close()
-    print("[INIT] App ready to start", flush=True)
-except Exception as e:
-    print(f"[ERROR] Initialization failed: {e}", flush=True)
-    import traceback
-    traceback.print_exc()
-
-# Flag to track if data has been generated
-data_generated = False
-
-def ensure_data_exists():
-    """Generate stock data if it doesn't exist"""
-    global data_generated
-    if not data_generated:
         from database import StockMetrics
         db = SessionLocal()
         try:
             stock_count = db.query(StockMetrics).count()
+            print(f"[INFO] Found {stock_count} stocks in database", flush=True)
+            
             if stock_count == 0:
                 print("[INIT] Generating stock data...", flush=True)
                 from data_sync import sync_all_stocks
                 sync_all_stocks()
                 print("[INIT] Stock data ready", flush=True)
-            data_generated = True
         finally:
             db.close()
+        
+        initialized = True
+        print("[INIT] App ready", flush=True)
+    except Exception as e:
+        print(f"[ERROR] Initialization failed: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
 
 # ========== AUTHENTICATION ==========
 @app.route('/health')
@@ -67,7 +58,7 @@ def health():
 
 @app.route('/')
 def index():
-    ensure_data_exists()  # Generate data on first request
+    initialize_app()
     if 'user' not in session:
         return redirect(url_for('login'))
     return render_template('index.html', user=session['user'])
