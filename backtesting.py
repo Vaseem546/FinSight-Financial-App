@@ -1,6 +1,5 @@
 import numpy as np
 import joblib
-from tensorflow.keras.models import load_model
 from datetime import datetime, timedelta
 from database import SessionLocal, PredictionHistory, StockData
 import os
@@ -14,19 +13,29 @@ def load_model_and_scaler(symbol):
         return None, None
     
     try:
+        from tensorflow.keras.models import load_model
         # Load with custom objects to handle InputLayer issue
         from tensorflow.keras.layers import InputLayer
         model = load_model(model_path, compile=False, custom_objects={'InputLayer': InputLayer})
+    except ImportError:
+        print(f"TensorFlow not installed. Skipping LSTM load for {symbol}.")
+        return None, None
     except Exception as e:
         print(f"Model load error for {symbol}: {e}")
         # Try alternative loading method
         try:
             import h5py
+            from tensorflow.keras.models import load_model
             model = load_model(model_path, compile=False)
         except:
             return None, None
     
-    scaler = joblib.load(scaler_path)
+    try:
+        scaler = joblib.load(scaler_path)
+    except Exception as e:
+        print(f"Scaler load error for {symbol}: {e}")
+        return None, None
+        
     return model, scaler
 
 def predict_next_days(symbol, days=7):
