@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>FinSight</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
- <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 
   <style>
     html { scroll-behavior: smooth; }
@@ -54,7 +54,7 @@
 <div id="candlestick-chart" style="margin-top: 30px;"></div>
 <script>
   try {
-    const chartData = {{ candlestick | tojson | safe }};
+    const chartData = JSON.parse({{ candlestick | tojson | safe }});
     if (chartData.data && chartData.data.length > 0) {
       Plotly.newPlot("candlestick-chart", chartData.data, chartData.layout);
     } else {

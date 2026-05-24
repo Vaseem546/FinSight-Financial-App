@@ -158,7 +158,7 @@ def analyze():
         }
         
         return render_template('index.html',
-            candlestick=fig.to_plotly_json(),
+            candlestick=fig.to_json(),
             analysis=analysis_data,
             analysis_symbol=symbol,
             exchange=exchange,
