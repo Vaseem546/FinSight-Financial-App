@@ -26,7 +26,7 @@ FinSight is a full-stack financial web application providing retail investors wi
 
 ## 🚀 Live Demo
 
-**[👉 Click here to view the live application]([https://fin-sight-app.onrender.com](https://finsight-web-app.onrender.com))****
+**[👉 Click here to view the live application](https://finsight-web-app.onrender.com)**
 
 *(Add a screenshot or GIF of your dashboard here to make it eye-catching)*
 <!-- <img src="link_to_your_screenshot.png" width="100%" alt="Dashboard Preview"> -->
