@@ -31,5 +31,9 @@ Thumbs.db
 *.sqlite
 *.sqlite3
 
+# Vercel project settings and local deployment metadata
+.vercel/
+
 #Stop tracking env file for security
 *.env 
+.vercel

@@ -1,8 +1,9 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, Text
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, ForeignKey, UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, relationship
 from datetime import datetime
 from werkzeug.security import generate_password_hash, check_password_hash
+import os
 
 Base = declarative_base()
 
@@ -34,6 +35,7 @@ class Portfolio(Base):
 # Stock Data Model (Local Cache)
 class StockData(Base):
     __tablename__ = 'stock_data'
+    __table_args__ = (UniqueConstraint('symbol', 'date', name='uq_stock_symbol_date'),)
     id = Column(Integer, primary_key=True)
     symbol = Column(String(20), nullable=False)
     date = Column(DateTime, nullable=False)
@@ -53,6 +55,7 @@ class StockMetrics(Base):
     market_cap = Column(Float)
     pe_ratio = Column(Float)
     pb_ratio = Column(Float)
+    book_value = Column(Float)
     dividend_yield = Column(Float)
     week_52_high = Column(Float)
     week_52_low = Column(Float)
@@ -61,24 +64,22 @@ class StockMetrics(Base):
     score = Column(Float)  # Custom FinSight Score (0-100)
     updated_at = Column(DateTime, default=datetime.utcnow)
 
-# Prediction History (Track Model Accuracy)
-class PredictionHistory(Base):
-    __tablename__ = 'prediction_history'
-    id = Column(Integer, primary_key=True)
-    symbol = Column(String(20), nullable=False)
-    prediction_date = Column(DateTime, nullable=False)
-    predicted_price = Column(Float, nullable=False)
-    actual_price = Column(Float)
-    accuracy = Column(Float)  # Percentage accuracy
-    created_at = Column(DateTime, default=datetime.utcnow)
-
 # Database initialization
-engine = create_engine('sqlite:///finsight.db', echo=False)
-SessionLocal = sessionmaker(bind=engine)
+database_path = os.environ.get('DATABASE_PATH')
+if not database_path and os.environ.get('VERCEL'):
+    database_path = '/tmp/finsight.db'
+database_path = database_path or 'finsight.db'
+engine = create_engine(f'sqlite:///{database_path}', echo=False)
+SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
+
 
 def init_db():
-    """Initialize database and create all tables"""
+    """Initialize database and create or migrate all tables."""
     Base.metadata.create_all(engine)
+    with engine.connect() as connection:
+        columns = {row[1] for row in connection.exec_driver_sql("PRAGMA table_info(stock_metrics)").fetchall()}
+        if 'book_value' not in columns:
+            connection.exec_driver_sql("ALTER TABLE stock_metrics ADD COLUMN book_value FLOAT")
     print("[OK] Database initialized successfully")
 
 def get_db():
