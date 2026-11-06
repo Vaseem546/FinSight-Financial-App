@@ -1,330 +1,279 @@
-from flask import Flask, render_template, request, redirect, session, url_for, jsonify, send_file
-from flask_pymongo import PyMongo
-from werkzeug.security import generate_password_hash, check_password_hash
-import yfinance as yf
-import pandas as pd
-import os
-import io
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-import json
-import plotly.graph_objs as go
-from plotly.utils import PlotlyJSONEncoder
-import datetime
-import numpy as np
-from sklearn.preprocessing import MinMaxScaler
-from tensorflow.keras.models import load_model, Sequential
-from tensorflow.keras.layers import LSTM, Dense
-from tensorflow.keras.callbacks import EarlyStopping
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 from dotenv import load_dotenv
+import os
+import plotly.graph_objs as go
+
+# Import our modules
+from database import init_db, SessionLocal, User, Portfolio
+from data_sync import fetch_stock, get_stock_history, get_stock_metrics, populate_screener_universe
+from portfolio_analytics import get_user_portfolio, get_portfolio_analytics
+
+load_dotenv()
 
 app = Flask(__name__)
-load_dotenv()
-app.secret_key =  os.getenv("SECRET_KEY")
-# MongoDB config (if used)
-app.config["MONGO_URI"] = "mongodb://localhost:27017/finsight"
-mongo = PyMongo(app)
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-# Load all stocks from CSV
-stocks_df = pd.read_csv("all_stocks.csv")
+# Flag to track if initialization is done
+initialized = False
 
+def initialize_app():
+    """Initialize the database without fetching or generating market data."""
+    global initialized
+    if initialized:
+        return
 
-# ---------------- ROUTES ---------------- #
+    try:
+        init_db()
+        initialized = True
+    except Exception as e:
+        print(f"[ERROR] Initialization failed: {e}", flush=True)
+
+# ========== AUTHENTICATION ==========
+@app.route('/health')
+def health():
+    """Health check endpoint"""
+    return jsonify({'status': 'healthy', 'message': 'FinSight is running'}), 200
 
 @app.route('/')
 def index():
-    if 'user' in session:
-        return render_template('index.html', user=session['user'], forecast=None, analysis=None, error=None, analysis_error=None, candlestick=None)
-    return redirect(url_for('login'))
+    initialize_app()
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    return render_template('index.html', user=session['user'])
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    users = mongo.db.users
     if request.method == 'POST':
-        email = request.form['email'].strip().lower()
+        email = request.form['email']
         password = request.form['password']
-        user = users.find_one({'email': email})
-        if user and check_password_hash(user['password'], password):
+        
+        db = SessionLocal()
+        user = db.query(User).filter_by(email=email).first()
+        db.close()
+        
+        if user and user.check_password(password):
             session['user'] = email
             return redirect(url_for('index'))
-        return render_template('login_register.html', login_error="Invalid credentials")
-    return render_template('login_register.html')
+        
+        return render_template('login_register.html', error="Invalid credentials", show="login")
+    
+    return render_template('login_register.html', show="login")
 
 @app.route('/register', methods=['POST'])
 def register():
-    users = mongo.db.users
-    username = request.form['username'].strip()
-    email = request.form['email'].strip().lower()
+    email = request.form['email']
     password = request.form['password']
-
-    if users.find_one({'email': email}):
-        return render_template('login_register.html', register_error="User already exists")
-
-    hashed_pw = generate_password_hash(password)
-    users.insert_one({'email': email, 'password': hashed_pw, 'username': username})
-    return render_template('login_register.html', register_success="Registration successful")
+    
+    db = SessionLocal()
+    existing = db.query(User).filter_by(email=email).first()
+    
+    if existing:
+        db.close()
+        return render_template('login_register.html', error="Email already registered", show="register")
+    
+    user = User(email=email)
+    user.set_password(password)
+    db.add(user)
+    db.commit()
+    db.close()
+    
+    session['user'] = email
+    return redirect(url_for('index'))
 
 @app.route('/logout')
 def logout():
     session.pop('user', None)
     return redirect(url_for('login'))
 
-
-
-
-# ---------------- STOCK ANALYSIS ---------------- #
-
-@app.route('/analyze_stock', methods=['POST'])
-def analyze_stock():
-    symbol = request.form['analysis_symbol'].upper()
-    exchange = request.form['analysis_exchange']
-
-    if exchange == 'NSE':
-        ticker = symbol + ".NS"
-    elif exchange == 'BSE':
-        ticker = symbol + ".BO"
-    else:
-        return render_template('index.html', analysis_error="Invalid exchange selected.", scroll_to="analysis", user=session.get('user'))
-
+# ========== STOCK ANALYSIS ==========
+@app.route('/analyze', methods=['POST'])
+def analyze():
+    symbol = request.form.get('analysis_symbol', '').upper()
+    exchange = request.form.get('analysis_exchange')
+    
     try:
-        stock = yf.Ticker(ticker)
-        hist = stock.history(period="1mo")
-
-        if hist.empty:
-            return render_template('index.html', analysis_error="No historical data found for this stock.", scroll_to="analysis", user=session.get('user'))
-
-        stock_df = hist
-        required_cols = {'Open', 'High', 'Low', 'Close'}
-        if not required_cols.issubset(stock_df.columns):
-            return render_template('index.html', analysis_error="Incomplete data for candlestick chart.", scroll_to="analysis", user=session.get('user'))
-
-        info = stock.info
-        stock_info = {
+        hist, metrics = fetch_stock(symbol, exchange or 'NSE')
+        if hist is None or hist.empty:
+            raise Exception(f'Stock data not available for {symbol}')
+        
+        # Create candlestick chart
+        candlestick_data = [go.Candlestick(
+            x=hist['Date'].tolist(),
+            open=hist['Open'].tolist(),
+            high=hist['High'].tolist(),
+            low=hist['Low'].tolist(),
+            close=hist['Close'].tolist(),
+            name=symbol,
+            increasing=dict(line=dict(color='#16794b', width=1), fillcolor='#16794b'),
+            decreasing=dict(line=dict(color='#b42318', width=1), fillcolor='#d92d20')
+        )]
+        
+        layout = go.Layout(
+            plot_bgcolor='#ffffff',
+            paper_bgcolor='#ffffff',
+            font=dict(color='#171717'),
+            hovermode='x unified',
+            margin=dict(l=58, r=18, t=20, b=48),
+            xaxis=dict(title=None, color='#525252', type='date', showgrid=False,
+                       tickformat='%b %Y', nticks=8,
+                       rangeslider=dict(visible=False), linecolor='#d4d4d0'),
+            yaxis=dict(title='Price (₹)', color='#525252', showgrid=True,
+                       gridcolor='#ecece8', fixedrange=False, side='right')
+        )
+        
+        fig = go.Figure(data=candlestick_data, layout=layout)
+        
+        analysis_data = {
             'symbol': symbol,
-            'price': round(info.get('currentPrice', 0), 2),
-            'open': round(info.get('open', 0), 2),
-            'previousClose': round(info.get('previousClose', 0), 2),
-            'dayHigh': round(info.get('dayHigh', 0), 2),
-            'dayLow': round(info.get('dayLow', 0), 2),
-            'volume': info.get('volume', 0),
-            'fiftyTwoWeekHigh': info.get('fiftyTwoWeekHigh'),
-            'fiftyTwoWeekLow': info.get('fiftyTwoWeekLow')
+            'price': round(hist['Close'].iloc[-1], 2),
+            'open': round(hist['Open'].iloc[-1], 2),
+            'previousClose': round(hist['Close'].iloc[-2], 2) if len(hist) > 1 else 0,
+            'dayHigh': round(hist['High'].iloc[-1], 2),
+            'dayLow': round(hist['Low'].iloc[-1], 2),
+            'volume': int(hist['Volume'].iloc[-1]),
+            'fiftyTwoWeekHigh': round(metrics.week_52_high, 2) if metrics else 0,
+            'fiftyTwoWeekLow': round(metrics.week_52_low, 2) if metrics else 0,
+            'finsight_score': round(metrics.score, 1) if metrics else 0,
+            'rsi': round(metrics.rsi, 1) if metrics else 0,
+            'pe_ratio': round(metrics.pe_ratio, 1) if metrics else 0,
+            'updatedAt': metrics.updated_at.strftime('%d %b %Y, %H:%M UTC') if metrics and metrics.updated_at else 'Not cached'
+        }
+        
+        return render_template('index.html',
+            candlestick=fig.to_json(),
+            analysis=analysis_data,
+            analysis_symbol=symbol,
+            exchange=exchange,
+            user=session.get('user')
+        )
+        
+    except Exception as e:
+        return render_template('index.html', analysis_error=str(e), user=session.get('user'))
+
+# ========== STOCK SCREENER ==========
+@app.route('/screener', methods=['POST'])
+def screener():
+    try:
+        def optional_float(name, default=None):
+            value = request.form.get(name)
+            return float(value) if value not in (None, '') else default
+
+        filters = {
+            'min_score': optional_float('min_score', 0),
+            'max_pe': optional_float('max_pe'),
+            'min_rsi': optional_float('min_rsi', 0),
+            'max_rsi': optional_float('max_rsi', 100),
+            'min_market_cap': optional_float('min_market_cap'),
+            'max_market_cap': optional_float('max_market_cap'),
+            'min_book_value': optional_float('min_book_value'),
+            'min_dividend_yield': optional_float('min_dividend_yield'),
+            'max_pb': optional_float('max_pb'),
+            'near_high': request.form.get('near_high', 'any'),
+            'near_low': request.form.get('near_low', 'any')
         }
 
-        fig = go.Figure(data=[go.Candlestick(
-            x=stock_df.index.strftime('%Y-%m-%d'),
-            open=stock_df['Open'],
-            high=stock_df['High'],
-            low=stock_df['Low'],
-            close=stock_df['Close']
-        )])
+        populate_screener_universe(limit=40)
 
-        fig.update_layout(
-            title=f"{symbol.upper()} Candlestick Chart",
-            xaxis_title="Date",
-            yaxis_title="Price",
-            template="plotly_dark"
+        db = SessionLocal()
+        from database import StockMetrics
+        query = db.query(StockMetrics).filter(
+            StockMetrics.score >= filters['min_score'],
+            StockMetrics.rsi >= filters['min_rsi'],
+            StockMetrics.rsi <= filters['max_rsi']
         )
+        if filters['max_pe'] is not None:
+            query = query.filter(StockMetrics.pe_ratio > 0, StockMetrics.pe_ratio <= filters['max_pe'])
+        if filters['min_market_cap'] is not None:
+            query = query.filter(StockMetrics.market_cap >= filters['min_market_cap'] * 10000000)
+        if filters['max_market_cap'] is not None:
+            query = query.filter(StockMetrics.market_cap <= filters['max_market_cap'] * 10000000)
+        if filters['min_book_value'] is not None:
+            query = query.filter(StockMetrics.book_value >= filters['min_book_value'])
+        if filters['min_dividend_yield'] is not None:
+            query = query.filter(StockMetrics.dividend_yield >= filters['min_dividend_yield'])
+        if filters['max_pb'] is not None:
+            query = query.filter(StockMetrics.pb_ratio > 0, StockMetrics.pb_ratio <= filters['max_pb'])
 
-        candlestick_json = json.dumps(fig, cls=PlotlyJSONEncoder)
+        stocks = query.order_by(StockMetrics.score.desc()).all()
+        db.close()
 
-        return render_template("index.html", analysis=stock_info, candlestick=candlestick_json, scroll_to="analysis", user=session.get('user'))
-
-    except Exception as e:
-        return render_template('index.html', analysis_error="Something went wrong: " + str(e), scroll_to="analysis", user=session.get('user'))
-
-
-#------------ STOCK SCREENER --------------------#
-
-@app.route('/screener', methods=['GET', 'POST'])
-def screener():
-    if 'user' not in session:
-        return redirect(url_for('login'))
-
-    filtered_results = []
-    if request.method == 'POST':
-        form = request.form
-
-        # Get filter values
-        min_marketcap = float(form.get("min_marketcap") or 0)
-        min_volume = float(form.get("min_volume") or 0)
-        max_pe = float(form.get("max_pe") or 1000)
-        max_pb = float(form.get("max_pb") or 1000)
-        min_dividend = float(form.get("min_dividend") or 0)
-        min_bookvalue = float(form.get("min_bookvalue") or 0)
-
-        # Filter all stocks
-        for _, row in stocks_df.iterrows():
-            symbol = row['Symbol'] + ".NS"
-            try:
-                stock = yf.Ticker(symbol)
-                info = stock.info
-
-                # Extract relevant metrics
-                market_cap = info.get('marketCap', 0) / 1e7  # Convert to Cr
-                volume = info.get('volume', 0)
-                pe = info.get('trailingPE', 0)
-                pb = info.get('priceToBook', 0)
-                dividend_yield = info.get('dividendYield', 0) * 100 if info.get('dividendYield') else 0
-                book_value = info.get('bookValue', 0)
-                price = info.get('currentPrice', 0)
-                high = info.get('fiftyTwoWeekHigh', 0)
-                low = info.get('fiftyTwoWeekLow', 0)
-
-                # Apply filters
-                if (
-                    market_cap >= min_marketcap and
-                    volume >= min_volume and
-                    pe <= max_pe and
-                    pb <= max_pb and
-                    dividend_yield >= min_dividend and
-                    book_value >= min_bookvalue
-                ):
-                    filtered_results.append({
-                        "symbol": row['Symbol'],
-                        "price": price,
-                        "marketCap": round(market_cap, 2),
-                        "volume": volume,
-                        "pe": pe,
-                        "pb": pb,
-                        "dividendYield": round(dividend_yield, 2),
-                        "bookValue": book_value,
-                        "high": high,
-                        "low": low
-                    })
-
-            except Exception as e:
+        filtered = []
+        for s in stocks:
+            price = s.current_price or 0
+            high = s.week_52_high or 0
+            low = s.week_52_low or 0
+            near_high = high > 0 and price >= high * 0.90
+            near_low = low > 0 and price <= low * 1.10
+            if filters['near_high'] == 'yes' and not near_high:
                 continue
+            if filters['near_high'] == 'no' and near_high:
+                continue
+            if filters['near_low'] == 'yes' and not near_low:
+                continue
+            if filters['near_low'] == 'no' and near_low:
+                continue
+            position = ((price - low) / (high - low) * 100) if high > low else 0
+            filtered.append({
+                'symbol': s.symbol, 'price': round(price, 2), 'score': round(s.score or 0, 1),
+                'rsi': round(s.rsi or 0, 1), 'pe': round(s.pe_ratio or 0, 1),
+                'pb': round(s.pb_ratio or 0, 2), 'book_value': round(s.book_value or 0, 2),
+                'market_cap': round((s.market_cap or 0) / 10000000, 0),
+                'dividend_yield': round(s.dividend_yield or 0, 2),
+                'high': round(high, 2), 'low': round(low, 2),
+                'near_high': 'Yes' if near_high else 'No', 'near_low': 'Yes' if near_low else 'No',
+                'position': round(position, 1)
+            })
 
-    return render_template("index.html", screener_data=filtered_results,scroll_to="screener", user=session.get('user'))
+        return render_template('index.html', screener_data=filtered, scroll_to='screener', user=session.get('user'))
+    except Exception as e:
+        return render_template('index.html', screener_error=str(e), scroll_to='screener', user=session.get('user'))
 
-
-NIFTY_50 = [filename.replace('.h5', '') for filename in os.listdir('models') if filename.endswith('.h5')]
-# ---------------- STOCK PREDICTION ---------------- #
-
-@app.route('/predict_stock', methods=['POST'])
-def predict_stock():
-    symbol = request.form.get('stock_symbol', '').strip().upper()
-    exchange = request.form.get('exchange', '').strip()
-    user = session.get('user')
-
-    if not symbol or not exchange:
-        return render_template('index.html', user=user, error="Please enter both stock symbol and exchange.")
-
-    symbol_key = symbol  # Used for naming model
-    if exchange == 'NSE':
-        symbol += ".NS"
-    elif exchange == 'BSE':
-        symbol += ".BO"
-
-    model_path = f"models/{symbol_key}.h5"
-
-    end = datetime.datetime.today()
-    start = end - datetime.timedelta(days=365 * 3)
-
-    df = yf.download(symbol, start=start, end=end)
-    if df.empty or 'Close' not in df:
-        return render_template('index.html', user=user, error="Failed to fetch stock data.")
-
-    data = df['Close'].values.reshape(-1, 1)
-    scaler = MinMaxScaler()
-    scaled_data = scaler.fit_transform(data)
-
-    if not os.path.exists(model_path):
-        # ✅ Auto-train if model doesn't exist
-        if len(scaled_data) < 100:
-            return render_template('index.html', user=user, error="Not enough data to train a model.")
-        
-        X, y = [], []
-        for i in range(60, len(scaled_data)):
-            X.append(scaled_data[i-60:i])
-            y.append(scaled_data[i])
-        X, y = np.array(X), np.array(y)
-
-        model = Sequential()
-        model.add(LSTM(units=50, return_sequences=True, input_shape=(X.shape[1], 1)))
-        model.add(LSTM(units=50))
-        model.add(Dense(units=1))
-
-        model.compile(optimizer='adam', loss='mean_squared_error')
-        model.fit(X, y, epochs=5, batch_size=32, verbose=0,
-                  callbacks=[EarlyStopping(monitor='loss', patience=2)])
-
-        model.save(model_path)
-    else:
-        model = load_model(model_path)
-
-    last_60 = scaled_data[-60:]
-    input_seq = last_60
-    predictions = []
-    dates = []
-
-    for i in range(7):
-        pred_input = input_seq.reshape(1, 60, 1)
-        pred = model.predict(pred_input, verbose=0)[0][0]
-        predictions.append(pred)
-        input_seq = np.append(input_seq, [[pred]], axis=0)[1:]
-        forecast_date = (end + datetime.timedelta(days=i + 1)).strftime('%d %B %Y, %I:%M %p')
-        dates.append(forecast_date)
-
-    final_prices = scaler.inverse_transform(np.array(predictions).reshape(-1, 1)).flatten()
-    forecast = list(zip(dates, final_prices))
-
-    return render_template('index.html', user=user, forecast=forecast, symbol=symbol_key, scroll_to='predictor')
-# ---------------- AUTOCOMPLETE API ---------------- #
-
-@app.route('/autocomplete')
-def autocomplete():
-    term = request.args.get('term', '').upper()
-    suggestions = [s for s in NIFTY_50 if term in s]
-    return jsonify(suggestions)
-
-
+# ========== PORTFOLIO ==========
 @app.route('/portfolio')
 def portfolio():
     if 'user' not in session:
         return redirect(url_for('login'))
-
-    portfolio = mongo.db.portfolio.find({'user': session['user']})
-    stocks = []
-    for entry in portfolio:
-        symbol = entry['symbol'] + ".NS"
-        try:
-            stock = yf.Ticker(symbol)
-            info = stock.info
-            stocks.append({
-                'symbol': entry['symbol'],
-                'price': info.get('currentPrice', 0),
-                'high': info.get('fiftyTwoWeekHigh', 0),
-                'low': info.get('fiftyTwoWeekLow', 0)
-            })
-        except Exception:
-            continue
-
-    return render_template('portfolio.html', stocks=stocks, user=session['user'])
+    
+    stocks = get_user_portfolio(session['user'])
+    analytics = get_portfolio_analytics(session['user'])
+    
+    return render_template('portfolio.html', stocks=stocks, analytics=analytics, user=session['user'])
 
 @app.route('/add_to_portfolio', methods=['POST'])
 def add_to_portfolio():
     if 'user' not in session:
         return redirect(url_for('login'))
-
-    symbol = request.form.get('symbol', '').upper()
-    if symbol:
-        existing = mongo.db.portfolio.find_one({'user': session['user'], 'symbol': symbol})
-        if not existing:
-            mongo.db.portfolio.insert_one({'user': session['user'], 'symbol': symbol})
+    
+    symbol = request.form.get('symbol')
+    exchange = request.form.get('exchange', 'NSE')
+    
+    db = SessionLocal()
+    user = db.query(User).filter_by(email=session['user']).first()
+    
+    # Check if already exists
+    existing = db.query(Portfolio).filter_by(user_id=user.id, symbol=symbol).first()
+    if not existing:
+        portfolio_item = Portfolio(user_id=user.id, symbol=symbol, exchange=exchange)
+        db.add(portfolio_item)
+        db.commit()
+    
+    db.close()
     return redirect(url_for('portfolio'))
 
 @app.route('/remove_from_portfolio', methods=['POST'])
 def remove_from_portfolio():
     if 'user' not in session:
         return redirect(url_for('login'))
-
-    symbol = request.form.get('symbol', '').upper()
-    mongo.db.portfolio.delete_one({'user': session['user'], 'symbol': symbol})
+    
+    symbol = request.form.get('symbol')
+    
+    db = SessionLocal()
+    user = db.query(User).filter_by(email=session['user']).first()
+    db.query(Portfolio).filter_by(user_id=user.id, symbol=symbol).delete()
+    db.commit()
+    db.close()
+    
     return redirect(url_for('portfolio'))
 
-# ---------------- RUN ---------------- #
-
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True, port=5000)
