@@ -1,153 +1,98 @@
-<div align="center">
-  <img src="https://img.shields.io/badge/FinSight-Financial_App-00ff88?style=for-the-badge&logo=flask&logoColor=black" alt="FinSight Logo">
-  <h1>FinSight Financial App</h1>
-  <p><b>Advanced tools for real-time stock analysis, LSTM-based predictions, and portfolio tracking.</b></p>
+﻿# FinSight
 
-  <!-- Badges -->
-  <a href="https://github.com/Vaseem546/FinSight-Financial-App/stargazers">
-    <img src="https://img.shields.io/github/stars/Vaseem546/FinSight-Financial-App?style=flat-square&color=00ff88" alt="Stars" />
-  </a>
-  <a href="https://github.com/Vaseem546/FinSight-Financial-App/network/members">
-    <img src="https://img.shields.io/github/forks/Vaseem546/FinSight-Financial-App?style=flat-square&color=00ff88" alt="Forks" />
-  </a>
-  <a href="https://github.com/Vaseem546/FinSight-Financial-App/issues">
-    <img src="https://img.shields.io/github/issues/Vaseem546/FinSight-Financial-App?style=flat-square&color=00ff88" alt="Issues" />
-  </a>
-  <a href="https://render.com/">
-    <img src="https://img.shields.io/badge/Deployed_on-Render-46E3B7?style=flat-square&logo=render&logoColor=white" alt="Deployed on Render" />
-  </a>
-</div>
+FinSight is a small stock research dashboard built with Flask. It brings market data, technical indicators, stock screening, and personal portfolio tracking into one straightforward interface.
 
-<br />
+**Live demo:** https://fin-sight-financial-app.vercel.app
 
-FinSight is a full-stack financial web application providing retail investors with advanced tools for real-time stock analysis, Machine Learning (LSTM) predictions, and an elegant, responsive UI inspired by modern fintech platforms like TradingView and Groww.
+> Market data may be delayed. FinSight is an analysis tool and should not be used as financial advice or investment recommendations.
 
----
+## What you can do
 
-## 🚀 Live Demo
+- Search stocks and view candlestick price charts
+- Compare price, market capitalization, valuation, and 52-week highs and lows
+- Explore indicators such as RSI and MACD
+- Review a FinSight score calculated from available market metrics
+- Screen stocks using score and technical indicator filters
+- Create an account and keep a personal portfolio
+- View portfolio-level value and performance summaries
 
-**[👉 Click here to view the live application](https://finsight-web-app.onrender.com)**
+## How it works
 
-*(Add a screenshot or GIF of your dashboard here to make it eye-catching)*
-<!-- <img src="link_to_your_screenshot.png" width="100%" alt="Dashboard Preview"> -->
+The app uses Flask for routes, templates, and sessions. SQLAlchemy manages the SQLite data model for users, portfolios, stock history, and calculated metrics. When a user looks up a stock, FinSight retrieves market history through `yfinance`, calculates the indicators, and renders an interactive Plotly chart.
 
----
+The interface is built with standard HTML, CSS, and JavaScript, with no separate frontend build step.
 
-## ✨ Features
+## Technology
 
-* **User Authentication** — Secure login and registration with Flask and SQLite.
-* **Interactive Stock Market Analysis** — Access 60 major stocks with dynamic, zoomable candlestick charts (powered by Plotly).
-* **AI-Powered & Trend-Based Predictions** — Predict future stock prices using advanced LSTM neural networks. Includes a highly resilient **Graceful Fallback Mechanism** that automatically switches to algorithmic trend analysis if the server (like Render's free tier) lacks memory to load heavy ML models!
-* **Advanced Stock Screener** — Filter and discover high-potential stocks based on a custom FinSight Score, RSI, and PE Ratio.
-* **Portfolio Analytics** — Build, manage, and track portfolio risk, volatility, and diversification scores.
-* **Responsive UI** — Mobile-first, dark-themed interface with smooth scroll and glassmorphism visual effects.
-* **100% API-Independent** — All data is generated and synced locally using highly realistic market algorithms. No paid external API dependencies required!
+- Python 3 and Flask
+- SQLAlchemy with SQLite
+- pandas and NumPy
+- Plotly
+- Yahoo Finance data through `yfinance`
+- HTML, CSS, and JavaScript
+- Vercel for production hosting
 
----
+## Run it locally
 
-## 🛠️ Tech Stack
+Requirements:
 
-* **Frontend:** HTML5, CSS3, JavaScript, Plotly.js (for charts)
-* **Backend:** Flask (Python 3.11), SQLAlchemy, Gunicorn
-* **Database:** SQLite (API-independent, auto-seeding)
-* **Data Science & ML:** TensorFlow / Keras (LSTM), Scikit-Learn, Pandas, NumPy
-* **Deployment:** Render (Automated via `render.yaml`)
+- Python 3.12 recommended
+- Windows PowerShell, macOS terminal, or Linux shell
 
----
-
-## 📂 Project Structure
-
-```bash
-FinSight-Financial-App/
-├── app.py                        # Main Flask application & routing
-├── backtesting.py                # ML prediction & backtesting logic
-├── data_sync.py                  # Realistic market data generator
-├── database.py                   # SQLAlchemy DB models & config
-├── portfolio_analytics.py        # Portfolio risk & metrics algorithms
-├── train_models.py               # LSTM neural network training script
-├── setup.py                      # Database initialization & seeder
-├── requirements.txt              # Python dependencies
-├── render.yaml                   # Render deployment blueprint
-├── static/
-│   └── style.css                 # Global glassmorphism styles
-├── templates/
-│   ├── index.html                # Main dashboard & interactive UI
-│   ├── portfolio.html            # Portfolio tracking page
-│   └── login_register.html       # Auth pages
-└── models/                       # Directory for pre-trained LSTM (.h5) models
-```
-
----
-
-## 💻 Getting Started (Local Development)
-
-1. **Clone the repository:**
-```bash
-git clone https://github.com/Vaseem546/FinSight-Financial-App.git
-cd FinSight-Financial-App
-```
-
-2. **Create a virtual environment:**
-```bash
-python -m venv venv
-```
-
-3. **Activate the virtual environment:**
-   * **PowerShell (Windows):** `.\venv\Scripts\Activate.ps1`
-   * **Command Prompt (Windows):** `.\venv\Scripts\activate.bat`
-   * **Mac/Linux:** `source venv/bin/activate`
-
-4. **Install dependencies:**
-```bash
-pip install -r requirements.txt
-```
-
-5. **Initialize database and generate stock data:**
-```bash
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -r requirements.txt
 python setup.py
-```
-
-6. **Run the Flask server:**
-```bash
 python app.py
 ```
 
-7. **Access the App:**
-Open `http://127.0.0.1:5000` in your browser.
+Then open http://127.0.0.1:5000.
 
----
+On macOS or Linux, activate the virtual environment with:
 
-## ☁️ Deployment (Render)
-
-This project is 100% pre-configured for deployment on **Render.com** using the included `render.yaml` Blueprint.
-
-1. Connect your GitHub account to Render.
-2. Create a new **Blueprint Instance**.
-3. Select this repository.
-4. Render will automatically run `pip install` and `python setup.py` to build the database, and launch the app using Gunicorn.
-
----
-
-## 🧠 Optional: Train Models
-
-To generate fresh Machine Learning predictions for the NIFTY 50 stocks, you can run the training script locally (Requires TensorFlow):
 ```bash
-python train_models.py
+source .venv/bin/activate
 ```
 
----
+## Deploy to Vercel
 
-## 🤝 Contributing
+The repository already includes [vercel.json](vercel.json). After installing and logging into the Vercel CLI:
 
-Contributions, issues, and feature requests are welcome!
-1. Fork the repository
-2. Create your feature branch: `git checkout -b feature/AmazingFeature`
-3. Commit your changes: `git commit -m 'Add some AmazingFeature'`
-4. Push to the branch: `git push origin feature/AmazingFeature`
-5. Open a Pull Request
+```powershell
+vercel login
+vercel --prod
+```
 
----
+The production health check is available at:
 
-## 📜 License
+```text
+/health
+```
 
-MIT License © 2025 FinSight Team
+## Database note
+
+Locally, FinSight stores data in `finsight.db`. On Vercel, the app uses a SQLite database in `/tmp` because serverless functions do not provide persistent storage. Account and portfolio data may therefore change or reset between serverless deployments or cold starts.
+
+For a persistent shared deployment, connect the app to an external database and configure it through an environment variable before deployment.
+
+## Project structure
+
+```text
+app.py               Flask routes and application setup
+database.py          SQLAlchemy models and database configuration
+data_sync.py         Market data retrieval and technical calculations
+portfolio_analytics.py Portfolio calculations
+setup.py             Database initialization helper
+templates/           Flask HTML templates
+static/              Stylesheets and browser assets
+vercel.json          Vercel deployment configuration
+```
+
+## Data notice
+
+Stock history is fetched from Yahoo Finance through an unofficial public data interface. Availability, delays, symbols, and fields can change without notice. Historical and calculated values should be treated as informational rather than guaranteed.
+
+## License
+
+This project is available under the MIT License. See [LICENSE](LICENSE).

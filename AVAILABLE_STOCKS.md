@@ -1,7 +1,12 @@
-# Available Stocks in FinSight (60 Stocks)
+# FinSight Stock Search
 
-## 100% API-Independent
-All stock data is generated locally using realistic algorithms. No external API calls.
+## On-demand Yahoo Finance coverage
+
+FinSight does not maintain a permanent 60-stock universe. Users can search supported NSE/BSE ticker symbols on demand. Selected results are cached in SQLite for 24 hours.
+
+## Previously seeded demonstration universe
+
+The original project contained the following 60 examples, but application startup no longer generates them automatically:
 
 ## Nifty 50 Stocks (30)
 1. RELIANCE - Reliance Industries
@@ -72,12 +77,13 @@ All stock data is generated locally using realistic algorithms. No external API 
 - Real-time calculated metrics (RSI, MACD, PE Ratio)
 - Custom FinSight Score (0-100) for each stock
 - Portfolio analytics and risk assessment
-- Trend-based price predictions
+- Stock analysis and technical screening
 
-## Regenerate Data
-To regenerate all stock data with new random variations:
-```bash
-python data_sync.py
+## Analyze Data
+
+Search from the Market Analysis page or run:
+
+```python
+from data_sync import fetch_stock
+history, metrics = fetch_stock('RELIANCE', 'NSE')
 ```
-
-Or visit: `http://127.0.0.1:5000/regenerate_data`
