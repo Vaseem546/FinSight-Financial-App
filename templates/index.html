@@ -1,248 +1,105 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>FinSight</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FinSight — Stock Analysis</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
-  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-
-  <style>
-    html { scroll-behavior: smooth; }
-  </style>
+  <script defer src="{{ url_for('static', filename='vendor/plotly.min.js') }}"></script>
 </head>
 <body>
-
-<!-- NAVBAR -->
-<nav class="navbar">
-  <div class="nav-container">
-    <div class="logo">FinSight</div>
-    <ul class="nav-links">
-      <li><a href="#hero">Home</a></li>
-      <li><a href="#analysis">Market Analysis</a></li>
-      <li><a href="#predictor">Stock Predictor</a></li>
-      <li><a href="#screener">Stock Screener</a></li>
-      <li><a href="{{ url_for('portfolio') }}">Portfolio</a></li>
-    </ul>
-    <div class="nav-user">
-      <span class="user-icon">👤</span>
-      <span class="username">{{ user }}</span>
-      <a class="logout-btn" href="{{ url_for('logout') }}">Logout</a>
+  <header class="navbar">
+    <div class="nav-container">
+      <a class="brand" href="{{ url_for('index') }}" aria-label="FinSight home"><span class="brand-mark">F</span><span>FinSight</span></a>
+      <button class="menu-toggle" id="menu-toggle" type="button" aria-label="Open navigation" aria-expanded="false"><span></span><span></span><span></span></button>
+      <nav class="nav-links" id="nav-links" aria-label="Primary navigation">
+        <a href="#analysis" class="active-link">Analysis</a>
+        <a href="#screener">Screener</a>
+        <a href="{{ url_for('portfolio') }}">Portfolio</a>
+      </nav>
+      <div class="nav-user"><span>{{ user }}</span><a href="{{ url_for('logout') }}">Log out</a></div>
     </div>
-  </div>
-</nav>
+  </header>
 
-<!-- HERO SECTION -->
-<section id="hero" class="hero">
-  <h1>Empower Your Financial Journey</h1>
-  <p>Market insights. Predictive analytics. All in one platform.</p>
-  <a href="#analysis" class="btn">Explore Now</a>
-</section>
-<!-- ANALYSIS -->
-<section id="analysis" class="section">
-  <h2>Stock Market Analysis</h2>
-  <form method="POST" action="{{ url_for('analyze') }}">
-    <input type="text" name="analysis_symbol" placeholder="Enter Stock Symbol (e.g. RELIANCE)" required>
-    <select name="analysis_exchange" required>
-      <option value="">Select Exchange</option>
-      <option value="NSE">NSE</option>
-      <option value="BSE">BSE</option>
-    </select>
-    <button type="submit">Analyze</button>
-  </form>
-  {% if candlestick %}
-<div id="candlestick-chart" style="margin-top: 30px;"></div>
-<script>
-  try {
-    const chartData = JSON.parse({{ candlestick | tojson | safe }});
-    if (chartData.data && chartData.data.length > 0) {
-      Plotly.newPlot("candlestick-chart", chartData.data, chartData.layout);
-    } else {
-      document.getElementById("candlestick-chart").innerHTML = "<p style='color:#ff6b6b;'>No chart data available.</p>";
-    }
-  } catch (e) {
-    document.getElementById("candlestick-chart").innerHTML = "<p style='color:#ff6b6b;'>Chart rendering failed.</p>";
-    console.error(e);
-  }
-</script>
-{% endif %}
+  <main>
+    <section class="hero" id="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">MARKET WORKSPACE</p>
+        <h1>Make the numbers clear.</h1>
+        <p>Search Indian stocks, review market history, and screen cached opportunities in one focused workspace.</p>
+      </div>
+      <a class="primary-action" href="#analysis">Analyze a stock <span aria-hidden="true">→</span></a>
+    </section>
 
-  {% if analysis_error %}
-    <div class="output"><p class="error">{{ analysis_error }}</p></div>
-  {% elif analysis %}
-    <h3>Stock Info for {{ analysis.symbol }} | FinSight Score: <span style="color:#00ff88;">{{ analysis.finsight_score }}/100</span></h3>
-    <div class="output">
-      <div class="output-box">Current Price: ₹{{ analysis.price }}</div>
-      <div class="output-box">Open: ₹{{ analysis.open }}</div>
-      <div class="output-box">Prev Close: ₹{{ analysis.previousClose }}</div>
-      <div class="output-box">Day High: ₹{{ analysis.dayHigh }}</div>
-      <div class="output-box">Day Low: ₹{{ analysis.dayLow }}</div>
-      <div class="output-box">Volume: {{ analysis.volume }}</div>
-      <div class="output-box">52W High: ₹{{ analysis.fiftyTwoWeekHigh }}</div>
-      <div class="output-box">52W Low: ₹{{ analysis.fiftyTwoWeekLow }}</div>
-      <div class="output-box">RSI: {{ analysis.rsi }}</div>
-      <div class="output-box">PE Ratio: {{ analysis.pe_ratio }}</div>
-    </div>
+    <section class="workspace-section" id="analysis">
+      <div class="section-heading">
+        <div><p class="eyebrow">MARKET ANALYSIS</p><h2>Stock overview</h2></div>
+        <span class="source-badge">Yahoo Finance data · 24h cache</span>
+      </div>
 
- {% if analysis_symbol %}
-  <form method="POST" action="{{ url_for('add_to_portfolio') }}">
-    <input type="hidden" name="symbol" value="{{ analysis_symbol }}">
-    <input type="hidden" name="exchange" value="{{ exchange }}">
-    <button type="submit">Save to Portfolio</button>
-  </form>
-{% endif %}
+      <form method="POST" action="{{ url_for('analyze') }}" class="search-panel" id="analysis-form">
+        <div class="field field-symbol"><label for="analysis_symbol">Ticker</label><input id="analysis_symbol" name="analysis_symbol" type="text" placeholder="e.g. RELIANCE" value="{{ analysis.symbol if analysis else '' }}" required></div>
+        <div class="field field-exchange"><label for="analysis_exchange">Exchange</label><select id="analysis_exchange" name="analysis_exchange"><option value="NSE" {% if exchange != 'BSE' %}selected{% endif %}>NSE</option><option value="BSE" {% if exchange == 'BSE' %}selected{% endif %}>BSE</option></select></div>
+        <button class="submit-button" type="submit"><span>Analyze stock</span></button>
+      </form>
 
+      {% if analysis_error %}<div class="notice error-notice"><strong>Unable to analyze this stock.</strong><span>{{ analysis_error }}</span></div>{% endif %}
 
+      {% if analysis %}
+      <article class="analysis-card">
+        <div class="analysis-header"><div><p class="ticker-label">{{ analysis.symbol }}</p><h3>₹{{ analysis.price }}</h3></div><div class="score-block"><span>FinSight score</span><strong>{{ analysis.finsight_score }}</strong><small>/ 100</small></div></div>
+        <div class="metrics-grid">
+          <div class="metric"><span>Open</span><strong>₹{{ analysis.open }}</strong></div><div class="metric"><span>Previous close</span><strong>₹{{ analysis.previousClose }}</strong></div>
+          <div class="metric"><span>Day range</span><strong>₹{{ analysis.dayLow }}–₹{{ analysis.dayHigh }}</strong></div><div class="metric"><span>52-week range</span><strong>₹{{ analysis.fiftyTwoWeekLow }}–₹{{ analysis.fiftyTwoWeekHigh }}</strong></div>
+          <div class="metric"><span>Volume</span><strong>{{ analysis.volume }}</strong></div><div class="metric"><span>RSI</span><strong>{{ analysis.rsi }}</strong></div>
+          <div class="metric"><span>P/E ratio</span><strong>{{ analysis.pe_ratio }}</strong></div><div class="metric"><span>Data updated</span><strong>{{ analysis.updatedAt }}</strong></div>
+        </div>
+        {% if analysis_symbol %}<form method="POST" action="{{ url_for('add_to_portfolio') }}" class="portfolio-action"><input type="hidden" name="symbol" value="{{ analysis_symbol }}"><input type="hidden" name="exchange" value="{{ exchange }}"><button type="submit">Add to portfolio</button></form>{% endif %}
+      </article>
 
- {% endif %}
-</section>
-
-
-
-<!-- Screener Section -->
-<section id="screener" class="section">
-  <h2>Stock Screener</h2>
-
-  <!-- Screener Filter Form -->
-  <form method="POST" action="{{ url_for('screener') }}" class="screener-form">
-    <div class="form-grid-with-button">
-      <input type="number" name="min_score" placeholder="Min FinSight Score (0-100)" step="0.1" min="0" max="100">
-      <input type="number" name="max_pe" placeholder="Max PE Ratio" step="0.1" min="0">
-      <input type="number" name="min_rsi" placeholder="Min RSI" step="0.1" min="0" max="100">
-      <input type="number" name="max_rsi" placeholder="Max RSI" step="0.1" min="0" max="100">
-      <button type="submit" class="run">Run Screener</button>
-    </div>
-  </form>
-   {% if screener_data %}
-    <h3>Screener Results ({{ screener_data|length }} stocks found)</h3>
-    <table style="width:100%; margin-top:20px; border-collapse: collapse; background: rgba(255,255,255,0.05);">
-      <thead>
-        <tr style="background: rgba(0,255,136,0.2); border-bottom: 2px solid #00ff88;">
-          <th style="padding: 15px; text-align: left; color: #00ff88; font-weight: bold;">Symbol</th>
-          <th style="padding: 15px; text-align: left; color: #00ff88; font-weight: bold;">Price (₹)</th>
-          <th style="padding: 15px; text-align: left; color: #00ff88; font-weight: bold;">FinSight Score</th>
-          <th style="padding: 15px; text-align: left; color: #00ff88; font-weight: bold;">RSI</th>
-          <th style="padding: 15px; text-align: left; color: #00ff88; font-weight: bold;">PE Ratio</th>
-          <th style="padding: 15px; text-align: left; color: #00ff88; font-weight: bold;">52W High (₹)</th>
-          <th style="padding: 15px; text-align: left; color: #00ff88; font-weight: bold;">52W Low (₹)</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for stock in screener_data %}
-        <tr style="border-bottom: 1px solid rgba(255,255,255,0.1);">
-          <td style="padding: 12px;"><strong>{{ stock.symbol }}</strong></td>
-          <td style="padding: 12px;">₹{{ stock.price }}</td>
-          <td style="padding: 12px;"><span style="color:#00ff88;">{{ stock.score }}/100</span></td>
-          <td style="padding: 12px;">{{ stock.rsi }}</td>
-          <td style="padding: 12px;">{{ stock.pe }}</td>
-          <td style="padding: 12px;">₹{{ stock.high }}</td>
-          <td style="padding: 12px;">₹{{ stock.low }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-   {% endif %}
-  {% if screener_error %}
-    <p class="error">{{ screener_error }}</p>
-  {% endif %}
-</section>
-
-
-  
-<!-- PREDICTOR -->
-<section id="predictor" class="section">
-  <h2>Stock Price Prediction</h2>
-  <form method="POST" action="{{ url_for('predict') }}">
-    <input type="text" name="predict_symbol" placeholder="Enter Stock Symbol (e.g. INFY)" required>
-    <select name="exchange" required>
-      <option value="">Select Exchange</option>
-      <option value="NSE">NSE</option>
-      <option value="BSE">BSE</option>
-    </select>
-    <button type="submit">Predict</button>
-  </form>
-
-  {% if forecast %}
-    <div class="prediction-result">
-      <h3>7-Day Forecast for {{ symbol }}</h3>
-      {% if model_accuracy %}
-      <p style="color:#00ff88;">Model Accuracy: {{ model_accuracy.avg_accuracy }}% (Based on {{ model_accuracy.total_predictions }} predictions)</p>
+      {% if candlestick %}<div class="chart-card"><div class="chart-heading"><div><span class="eyebrow">PRICE HISTORY</span><h3>{{ analysis.symbol }}</h3></div><div class="chart-key"><span></span> Candlestick</div></div><div id="candlestick-chart" aria-label="Price history chart"></div></div>{% endif %}
       {% endif %}
-      <table class="prediction-table">
-        <thead>
-          <tr>
-            <th>Date</th>
-            <th>Predicted Price (₹)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for date, price in forecast %}
-          <tr>
-            <td>{{ date }}</td>
-            <td>₹{{ price | round(2) }}</td>
-          </tr>
-          {% endfor %}
-        </tbody>
-      </table>
-    </div>
-  {% elif error %}
-    <div class="output"><p class="error">{{ error }}</p></div>
-  {% endif %}
-</section>
+    </section>
 
-<!-- FOOTER -->
-<footer>
-  <p>&copy; 2025 FinSight. All rights reserved.</p>
-</footer>
-{% if candlestick or analysis_error %}
-<script>
-  window.onload = () => {
-    const section = document.getElementById("analysis");
-    if (section) {
-      section.scrollIntoView({ behavior: "smooth" });
-    }
-  };
-</script>
-{% endif %}
+    <section class="workspace-section screener-section" id="screener">
+      <div class="section-heading"><div><p class="eyebrow">DISCOVERY</p><h2>Stock screener</h2></div>{% if screener_data %}<span class="source-badge">{{ screener_data|length }} results</span>{% endif %}</div>
+      <form method="POST" action="{{ url_for('screener') }}" class="filter-panel screener-filter-panel" id="screener-form">
+        <div class="field"><label for="min_score">Minimum score</label><input id="min_score" type="number" name="min_score" placeholder="0–100" step="0.1" min="0" max="100"></div>
+        <div class="field"><label for="max_pe">Maximum P/E</label><input id="max_pe" type="number" name="max_pe" placeholder="No limit" step="0.1" min="0"></div>
+        <div class="field"><label for="min_rsi">Minimum RSI</label><input id="min_rsi" type="number" name="min_rsi" placeholder="0" step="0.1" min="0" max="100"></div>
+        <div class="field"><label for="max_rsi">Maximum RSI</label><input id="max_rsi" type="number" name="max_rsi" placeholder="100" step="0.1" min="0" max="100"></div>
+        <div class="field"><label for="min_market_cap">Market cap min (₹ crore)</label><input id="min_market_cap" type="number" name="min_market_cap" placeholder="e.g. 10,000" step="100" min="0"></div>
+        <div class="field"><label for="max_market_cap">Market cap max (₹ crore)</label><input id="max_market_cap" type="number" name="max_market_cap" placeholder="No limit" step="100" min="0"></div>
+        <div class="field"><label for="min_book_value">Minimum book value</label><input id="min_book_value" type="number" name="min_book_value" placeholder="₹ per share" step="0.01" min="0"></div>
+        <div class="field"><label for="min_dividend_yield">Minimum dividend yield</label><input id="min_dividend_yield" type="number" name="min_dividend_yield" placeholder="%" step="0.1" min="0"></div>
+        <div class="field"><label for="max_pb">Maximum P/B</label><input id="max_pb" type="number" name="max_pb" placeholder="No limit" step="0.1" min="0"></div>
+        <div class="field"><label for="near_high">Near 52-week high</label><select id="near_high" name="near_high"><option value="any">Any</option><option value="yes">Yes</option><option value="no">No</option></select></div>
+        <div class="field"><label for="near_low">Near 52-week low</label><select id="near_low" name="near_low"><option value="any">Any</option><option value="yes">Yes</option><option value="no">No</option></select></div>
+        <div class="filter-actions"><button type="submit" class="submit-button">Run screener</button><button type="reset" class="reset-button">Reset</button></div>
+      </form>
+      {% if screener_error %}<div class="notice error-notice"><strong>Screener failed.</strong><span>{{ screener_error }}</span></div>{% endif %}
+      {% if screener_data is defined %}
+        <div class="table-card"><div class="table-toolbar"><div><strong>Results</strong><span>Sorted by FinSight score</span></div></div>
+        {% if screener_data %}<div class="table-scroll"><table><thead><tr><th>Symbol</th><th>Price</th><th>Score</th><th>RSI</th><th>P/E</th><th>P/B</th><th>Market cap</th><th>Book value</th><th>Dividend</th><th>52W low</th><th>52W high</th><th>Position</th><th>Near high</th><th>Near low</th></tr></thead><tbody>{% for stock in screener_data %}<tr><td><strong>{{ stock.symbol }}</strong></td><td>₹{{ stock.price }}</td><td><span class="score-pill">{{ stock.score }}/100</span></td><td>{{ stock.rsi }}</td><td>{{ stock.pe if stock.pe else '—' }}</td><td>{{ stock.pb if stock.pb else '—' }}</td><td>{% if stock.market_cap %}₹{{ stock.market_cap }} Cr{% else %}—{% endif %}</td><td>{% if stock.book_value %}₹{{ stock.book_value }}{% else %}—{% endif %}</td><td>{% if stock.dividend_yield %}{{ stock.dividend_yield }}%{% else %}—{% endif %}</td><td>₹{{ stock.low }}</td><td>₹{{ stock.high }}</td><td>{{ stock.position }}%</td><td>{{ stock.near_high }}</td><td>{{ stock.near_low }}</td></tr>{% endfor %}</tbody></table></div>
+        {% else %}<div class="empty-state"><strong>No matching stocks</strong><span>Try widening the filters or analyze a ticker to populate the cache.</span></div>{% endif %}</div>
+      {% endif %}
+    </section>
+  </main>
 
-<!-- Smooth Scroll on Load -->
-<script>
-  document.addEventListener('DOMContentLoaded', () => {
-    const scrollTarget = "{{ scroll_to|default('') }}";
-    if (scrollTarget) {
-      const section = document.getElementById(scrollTarget);
-      if (section) {
-        section.scrollIntoView({ behavior: 'smooth' });
-      }
-    }
-  });
-</script>
-<!-- Floating Predict Now Button -->
-<a href="#predictor" id="predict-btn" title="Try our Stock Predictor!">💹</a>
-<span class="predict-label">Predict</span>
+  <footer><span>FinSight</span><p>Market data for research and educational use only.</p></footer>
 
-<script>
-  const menuToggle = document.getElementById('menu-toggle');
-  const mobileMenu = document.getElementById('mobile-menu');
-  const closeBtn = document.getElementById('close-menu');
-
-  // Open menu
-  menuToggle.addEventListener('click', () => {
-    mobileMenu.classList.add('active');
-  });
-
-  // Close on cross button click
-  closeBtn.addEventListener('click', () => {
-    mobileMenu.classList.remove('active');
-  });
-
-  // Close on menu item click
-  document.querySelectorAll('#mobile-menu a').forEach(link => {
-    link.addEventListener('click', () => {
-      mobileMenu.classList.remove('active');
-    });
-  });
-</script>
-
+  {% if candlestick %}<script>
+    const chartPayload = JSON.parse({{ candlestick | tojson | safe }});
+    function drawChart(){if(!window.Plotly || !chartPayload)return;const compact=window.innerWidth<700;const layout=Object.assign({},chartPayload.layout||{},{autosize:true,height:compact?360:430,margin:{l:compact?48:58,r:compact?10:18,t:18,b:48},paper_bgcolor:'#fff',plot_bgcolor:'#fff',font:{family:'Inter, Segoe UI, sans-serif',color:'#171717'},xaxis:{type:'date',rangeslider:{visible:false},showgrid:false,showline:true,linecolor:'#d4d4d0',automargin:true,tickformat:'%b %Y',nticks:compact?6:10,tickangle:0},yaxis:{fixedrange:false,showgrid:true,gridcolor:'#ecece8',side:'right',automargin:true}});Plotly.newPlot('candlestick-chart',chartPayload.data||[],layout,{responsive:true,displaylogo:false,modeBarButtonsToRemove:['lasso2d','select2d']});}
+    window.addEventListener('load',drawChart);
+    let chartResizeTimer;window.addEventListener('resize',()=>{clearTimeout(chartResizeTimer);chartResizeTimer=setTimeout(drawChart,150);});
+  </script>{% endif %}
+  <script>
+    const menuToggle=document.getElementById('menu-toggle'),navLinks=document.getElementById('nav-links');
+    menuToggle.addEventListener('click',()=>{const open=navLinks.classList.toggle('open');menuToggle.setAttribute('aria-expanded',String(open));});
+    navLinks.querySelectorAll('a').forEach(link=>link.addEventListener('click',()=>{navLinks.classList.remove('open');menuToggle.setAttribute('aria-expanded','false');}));
+    {% if scroll_to %}document.getElementById('{{ scroll_to }}')?.scrollIntoView({behavior:'smooth'});{% endif %}
+    document.querySelectorAll('form').forEach(form=>form.addEventListener('submit',()=>{const button=form.querySelector('button[type="submit"]');if(button){button.classList.add('is-loading');button.disabled=true;}}));
+  </script>
 </body>
 </html>
